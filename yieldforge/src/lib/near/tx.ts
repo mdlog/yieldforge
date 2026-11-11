@@ -80,6 +80,8 @@ export type TxFinality =
 /**
  * Check execution on the NEAR RPC after a wallet returns a transaction hash.
  * A wallet accepting a signature is not the same as the contract executing it.
+ * Waits for FINAL, not EXECUTED: the pages re-read balances with finality "final" right after a confirmation,
+ * and at EXECUTED the blocks holding the receipts may not be final yet, so those reads would miss the change.
  */
 export async function awaitTxFinality(params: {
   hash: string
@@ -105,7 +107,7 @@ export async function awaitTxFinality(params: {
             tx_hash: params.hash,
             sender_account_id: params.senderAccountId,
             receiver_account_id: params.receiverAccountId,
-            wait_until: 'EXECUTED',
+            wait_until: 'FINAL',
           },
         }),
       })
