@@ -121,6 +121,21 @@ export function filledVolumeYocto(listings: Array<{ status: string; quantityTota
   return total
 }
 
+/** stNEAR Meta Pool mints for a stake: floor(NEAR × 1e24 / price), with the price scaled by 1e24. */
+export function stakeMintYocto(nearYocto: bigint, priceScaled: bigint): bigint {
+  return priceScaled > 0n ? (nearYocto * YOCTO) / priceScaled : 0n
+}
+
+/**
+ * stNEAR to deposit in a stake-and-deposit transaction: the minted amount less 0.01%, which stays in the
+ * wallet. The price can tick up between reading it and the transaction running (about 0.005% an epoch on
+ * mainnet); without the margin the transfer could then exceed what was minted and the whole transaction
+ * would revert.
+ */
+export function zapDepositYocto(mintedYocto: bigint): bigint {
+  return mintedYocto - mintedYocto / 10_000n
+}
+
 export interface DepositPreview {
   pt: bigint
   yt: bigint

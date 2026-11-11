@@ -66,6 +66,22 @@ export function buildDepositTx(params: { amountYocto: string }): TxRequest {
   }
 }
 
+/**
+ * Stake NEAR and deposit the stNEAR it mints, in one transaction. Both actions go to the stNEAR contract, so
+ * they run in one receipt: if the transfer fails, the stake is undone too and the NEAR stays in the wallet.
+ * If the series then refuses the deposit, the stNEAR is refunded to the wallet like any ft_transfer_call.
+ */
+export function buildStakeAndDepositTx(params: { nearYocto: string; depositYocto: string }): TxRequest {
+  const cfg = getNearConfig()
+  return {
+    receiverId: cfg.stNearContractId,
+    actions: [
+      functionCall('deposit_and_stake', {}, tgas(50), params.nearYocto),
+      functionCall('ft_transfer_call', { receiver_id: cfg.seriesContractId, amount: params.depositYocto, msg: '' }, tgas(55), ONE_YOCTO),
+    ],
+  }
+}
+
 /** stNEAR that redeeming these amounts pays now; null until the series is settled. */
 export async function fetchRedeemPreview(ptYocto: string, ytYocto: string): Promise<{ pt: string; yt: string } | null> {
   const cfg = getNearConfig()

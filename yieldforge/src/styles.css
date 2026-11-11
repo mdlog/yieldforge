@@ -814,6 +814,8 @@ a { color: inherit; }
 .earn-check { display: flex; gap: 10px; align-items: flex-start; color: var(--ink-soft); font-size: 12px; line-height: 1.5; cursor: pointer; }
 .earn-check input { margin-top: 2px; accent-color: var(--ink); }
 .earn-check a { color: var(--ink); }
+.earn-zap { padding: 10px 12px; border: 1px solid var(--line); background: var(--white); }
+.earn-zap strong { color: var(--ink); }
 .earn-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .earn-chips button { padding: 7px 12px; background: var(--paper); border: 1px solid var(--line); color: var(--ink-soft); font: 12px var(--mono); }
 .earn-chips button:hover:not(:disabled) { border-color: var(--ink-muted); }

@@ -144,9 +144,14 @@ Or browse the accounts on [NearBlocks testnet](https://testnet.nearblocks.io/add
 
 **App (React)**
 - Landing page with live protocol metrics, multi-series simulator and series ladder
-- **Deposit & sell** guided flow: stake NEAR → deposit stNEAR → list YT, on one page
+- **Deposit & sell** guided flow: stake NEAR → deposit stNEAR → list YT, on one page. Stake and deposit can go in **one
+  transaction** (two actions on the stNEAR contract, so a failed deposit also undoes the stake)
+- **Real staking APR**: Meta Pool's 30-day stNEAR growth on mainnet, read from archival RPC, prices YT instead of a fixed
+  assumption; the testnet rate is measured too, and the app warns when it is flat
+- Sellers see the **fixed APR they lock in** at their price; buyers see each listing's break-even APR against today's
 - **Buy YT**: every open listing across series, with price and break-even APR
-- Portfolio across all series: balances, listings (cancel), baseline/settlement calls, exact redemption preview
+- Portfolio across all series: balances, **projected payout at maturity** (exact once settled), listings (cancel),
+  baseline/settlement calls, exact redemption preview
 - In-app docs with live deployment data, contract reference and risks
 - Demo mode with labelled simulated data when `VITE_NEAR_LIVE` is not `true`
 
@@ -209,7 +214,7 @@ errors) and transactions signed in the user's wallet. There is no backend and no
 | Layer | Technology |
 | --- | --- |
 | Smart contract | Rust, `near-sdk` 5.27, `near-contract-standards` 5.27 (NEP-141/145/148), `uint` (U256 math), binaryen `wasm-opt` |
-| Chain | NEAR Protocol testnet, Meta Pool stNEAR, NearBlocks API v3 (account activity) |
+| Chain | NEAR Protocol testnet, Meta Pool stNEAR, NearBlocks API v3 (account activity), FastNEAR archival RPC (stNEAR APR, read-only mainnet reads) |
 | Frontend | React 19, TypeScript 5.7, Vite 6, React Router 7, lucide-react |
 | NEAR client | near-api-js 5, NEAR Wallet Selector 10 (MyNearWallet, Meteor, HOT) |
 | Scripts | Node.js, near-api-js |

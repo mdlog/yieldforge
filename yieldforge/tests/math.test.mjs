@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { breakEvenApr, buildScenarioRows, fairYtPrice, feeBpsFromTotals, filledVolumeYocto, listingExpiryOptions, lockedApr, previewDeposit, previewRedemption, projectPayout } from '../src/utils/math.ts';
+import { breakEvenApr, buildScenarioRows, fairYtPrice, feeBpsFromTotals, filledVolumeYocto, listingExpiryOptions, lockedApr, previewDeposit, previewRedemption, projectPayout, stakeMintYocto, zapDepositYocto } from '../src/utils/math.ts';
 import { formatYoctoInput } from '../src/utils/format.ts';
 
 describe('redemption preview', () => {
@@ -152,5 +152,25 @@ describe('seller and holder views', () => {
     const p = projectPayout({ pt: 0, yt: 5, rateNow: 3.2, r0: null, rt: null, aprPercent: 4, daysLeft: 30 });
     assert.equal(p.ytAccruedNear, 0);
     assert.ok(p.ytNear > 0);
+  });
+});
+
+describe('stake and deposit in one transaction', () => {
+  const Y = 10n ** 24n;
+  it('mints floor(NEAR / price) stNEAR, like Meta Pool', () => {
+    const price = 3198752259237337050198977n;
+    const minted = stakeMintYocto(Y, price);
+    assert.equal(minted, (Y * Y) / price);
+    assert.ok(minted * price <= Y * Y);
+    assert.equal(stakeMintYocto(Y, 0n), 0n);
+  });
+
+  it('deposits all but a 0.01% buffer, so a small price rise cannot overdraw', () => {
+    const price = 3198752259237337050198977n;
+    const deposit = zapDepositYocto(stakeMintYocto(5n * Y, price));
+    // A price up 0.005% (about one mainnet epoch) still mints at least the deposit.
+    const later = price + price / 20_000n;
+    assert.ok(stakeMintYocto(5n * Y, later) >= deposit);
+    assert.equal(zapDepositYocto(10_000n), 9_999n);
   });
 });

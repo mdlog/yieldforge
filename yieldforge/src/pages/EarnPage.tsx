@@ -8,15 +8,15 @@ import { useToast } from '@/contexts/ToastContext'
 import { useSeries, withSeries } from '@/contexts/SeriesContext'
 import { getNearConfig } from '@/lib/near/config'
 import { isLiveMode } from '@/lib/near/wallet'
-import { buildDepositTx } from '@/lib/contracts/series'
-import { buildStakeTx, MIN_STAKE_YOCTO } from '@/lib/contracts/metapool'
+import { buildDepositTx, buildStakeAndDepositTx } from '@/lib/contracts/series'
+import { buildStakeTx, getStNearPrice, MIN_STAKE_YOCTO } from '@/lib/contracts/metapool'
 import { buildCreateListingTx } from '@/lib/contracts/marketplace'
 import { useTx } from '@/hooks/useTx'
-import { useLivePosition, useNearBalance, useStNearBalance } from '@/hooks/useLiveData'
+import { useLivePosition, useNearBalance, useStNearBalance, useStNearPrice } from '@/hooks/useLiveData'
 import { useSeriesDisplay } from '@/hooks/useSeriesDisplay'
 import { bySchedule, tenorLabel, useAllSeries } from '@/hooks/useAllSeries'
 import { useStakingApr } from '@/hooks/useStakingApr'
-import { DEPOSIT_FEE_BPS, MARKET_FEE_BPS, buyCost, fairYtPrice, formatBps, listingExpiryOptions, lockedApr, previewDeposit } from '@/utils/math'
+import { DEPOSIT_FEE_BPS, MARKET_FEE_BPS, buyCost, fairYtPrice, formatBps, listingExpiryOptions, lockedApr, previewDeposit, stakeMintYocto, zapDepositYocto } from '@/utils/math'
 import { formatDate, formatYocto, formatYoctoInput, msToNanos, parseNear, toBigInt } from '@/utils/format'
 
 type StepId = 'stake' | 'deposit' | 'sell'
@@ -62,7 +62,9 @@ export default function EarnPage() {
   const stNearQuery = useStNearBalance(isConnected ? accountId : null)
   const positionQuery = useLivePosition(isConnected ? accountId : null)
   const stakeTx = useTx()
+  const zapTx = useTx()
   const depositTx = useTx()
+  const priceQuery = useStNearPrice()
   const listTx = useTx()
 
   const balances = useMemo(() => {
@@ -98,11 +100,12 @@ export default function EarnPage() {
     setPicked('deposit')
   }, [stakeTx.phase, refreshNear, refreshStNear])
   useEffect(() => {
-    if (depositTx.phase !== 'confirmed') return
+    if (depositTx.phase !== 'confirmed' && zapTx.phase !== 'confirmed') return
+    refreshNear()
     refreshStNear()
     refreshPosition()
     setPicked('sell')
-  }, [depositTx.phase, refreshStNear, refreshPosition])
+  }, [depositTx.phase, zapTx.phase, refreshNear, refreshStNear, refreshPosition])
   useEffect(() => {
     if (listTx.phase === 'confirmed') refreshPosition()
   }, [listTx.phase, refreshPosition])
@@ -145,6 +148,32 @@ export default function EarnPage() {
   const depositYocto = toYocto(depositAmount)
   const feeBps = series?.depositFeeBps ?? DEPOSIT_FEE_BPS
   const preview = previewDeposit(depositYocto ?? 0n, feeBps)
+
+  // ---- Step 1 + 2 in one transaction ---------------------------------------------------------
+  const canZap = series?.depositsOpen === true
+  const [zap, setZap] = useState(true)
+  const zapping = zap && canZap
+  const priceScaled = priceQuery.data ? BigInt(priceQuery.data) : rate ? parseNear(rate.toFixed(12)) : null
+  const zapPreview = previewDeposit(stakeYocto != null && priceScaled ? zapDepositYocto(stakeMintYocto(stakeYocto, priceScaled)) : 0n, feeBps)
+  const stakeAndDeposit = async () => {
+    if (live && !isConnected) return void connect()
+    if (!series?.depositsOpen) return push('This series no longer takes deposits. Pick an open series above.')
+    if (stakeYocto === null) return push('Enter how much NEAR to stake.')
+    if (stakeYocto < MIN_STAKE_YOCTO) return push(`Meta Pool's minimum stake is ${formatYoctoInput(MIN_STAKE_YOCTO)} NEAR.`)
+    if (balances?.near != null && stakeYocto > balances.near) return push('That is more NEAR than your wallet holds.')
+    if (!acknowledged) return push('Tick the box to confirm you understand the risks.')
+    if (!live) {
+      if (await zapTx.simulate()) push('Demo stake and deposit confirmed.', 'success')
+      return
+    }
+    // Price the deposit off a fresh read, right before signing.
+    const fresh = await getStNearPrice().then(BigInt).catch(() => null)
+    if (!fresh) return push('Could not read the stNEAR price. Try again.')
+    const amount = zapDepositYocto(stakeMintYocto(stakeYocto, fresh))
+    if (amount < minDeposit) return push(`That stakes too little to deposit; the minimum deposit is ${formatYoctoInput(minDeposit)} stNEAR.`)
+    const hash = await zapTx.execute(buildStakeAndDepositTx({ nearYocto: stakeYocto.toString(), depositYocto: amount.toString() }))
+    if (hash) push('Sent. PT and YT arrive once it confirms.', 'success')
+  }
   const deposit = async () => {
     if (live && !isConnected) return void connect()
     if (!series?.depositsOpen) return push('This series no longer takes deposits. Pick an open series above.')
@@ -255,17 +284,64 @@ export default function EarnPage() {
           summary={balances?.stNear != null ? `${formatYocto(balances.stNear, 4)} stNEAR in your wallet` : 'Stake NEAR with Meta Pool'}
         >
           <p className="earn-lead">Stake NEAR with Meta Pool. You get stNEAR back, which keeps earning staking rewards.</p>
-          <AmountField id="stake-amount" label="NEAR to stake" unit="NEAR" value={stakeAmount} onChange={setStakeAmount} onMax={stakeMax != null ? () => setStakeAmount(formatYoctoInput(stakeMax)) : undefined} disabled={stakeTx.phase !== 'idle'} />
-          <p className="earn-result">
-            <span>
-              You get ≈ <strong>{stakeYocto != null && rate ? (Number(formatYocto(stakeYocto, 6)) / rate).toFixed(4) : '—'} stNEAR</strong>
-            </span>
-            <small>Minimum 1 NEAR{rate ? ` · 1 stNEAR = ${rate.toFixed(4)} NEAR` : ''}</small>
-          </p>
+          <AmountField
+            id="stake-amount"
+            label="NEAR to stake"
+            unit="NEAR"
+            value={stakeAmount}
+            onChange={setStakeAmount}
+            onMax={stakeMax != null ? () => setStakeAmount(formatYoctoInput(stakeMax)) : undefined}
+            disabled={stakeTx.phase !== 'idle' || zapTx.phase !== 'idle'}
+          />
+          {canZap && (
+            <label className="earn-check earn-zap">
+              <input type="checkbox" checked={zap} onChange={(e) => setZap(e.target.checked)} disabled={stakeTx.phase !== 'idle' || zapTx.phase !== 'idle'} />
+              <span>
+                <strong>Also deposit it into {seriesName}</strong> — stake and deposit in one transaction, one signature. If the deposit fails, the stake is
+                undone too.
+              </span>
+            </label>
+          )}
+          {zapping ? (
+            <>
+              <div className="earn-receive" aria-live="polite">
+                <span>You receive ≈</span>
+                <span>
+                  <TokenBadge kind="PT" size="sm" /> <strong>{formatYocto(zapPreview.pt, 4)}</strong>
+                </span>
+                <span>
+                  <TokenBadge kind="YT" size="sm" /> <strong>{formatYocto(zapPreview.yt, 4)}</strong>
+                </span>
+              </div>
+              <small className="earn-hint">
+                Minimum 1 NEAR{rate ? ` · 1 stNEAR = ${rate.toFixed(4)} NEAR` : ''} · {formatBps(feeBps)} deposit fee · 0.01% of the stNEAR stays in your wallet as a
+                price buffer
+              </small>
+              <label className="earn-check">
+                <input type="checkbox" checked={acknowledged} onChange={(e) => setAcknowledged(e.target.checked)} />
+                <span>
+                  I understand PT is not principal-protected and YT pays nothing if the stNEAR rate doesn’t rise.{' '}
+                  <Link to="/docs#risks">Risks</Link>
+                </span>
+              </label>
+            </>
+          ) : (
+            <p className="earn-result">
+              <span>
+                You get ≈ <strong>{stakeYocto != null && rate ? (Number(formatYocto(stakeYocto, 6)) / rate).toFixed(4) : '—'} stNEAR</strong>
+              </span>
+              <small>Minimum 1 NEAR{rate ? ` · 1 stNEAR = ${rate.toFixed(4)} NEAR` : ''}</small>
+            </p>
+          )}
           <TxFeedback tx={stakeTx} failedTitle="Staking failed" successTitle="stNEAR received" />
-          {stakeTx.phase === 'idle' && (
+          <TxFeedback tx={zapTx} failedTitle="Stake and deposit failed" successTitle="PT and YT received" />
+          {stakeTx.phase === 'idle' && zapTx.phase === 'idle' && (
             <div className="earn-actions">
-              <Button onClick={stake}>{isConnected || !live ? 'Stake NEAR' : 'Connect wallet'}</Button>
+              {zapping ? (
+                <Button onClick={stakeAndDeposit}>{isConnected || !live ? 'Stake & deposit' : 'Connect wallet'}</Button>
+              ) : (
+                <Button onClick={stake}>{isConnected || !live ? 'Stake NEAR' : 'Connect wallet'}</Button>
+              )}
               <button type="button" className="earn-skip" onClick={() => setPicked('deposit')}>
                 I already have stNEAR <ArrowRight size={13} aria-hidden />
               </button>
