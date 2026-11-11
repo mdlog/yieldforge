@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ComponentType, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
   Anchor,
@@ -6,23 +6,31 @@ import {
   ArrowRight,
   ArrowUpRight,
   BadgeCheck,
+  Braces,
   Check,
   Coins,
   Database,
   Flame,
   Globe,
   KeyRound,
+  Layers,
   LockKeyhole,
   Pause,
   Plus,
   Scale,
+  Search,
   Split,
   TrendingUp,
   TriangleAlert,
+  Zap,
 } from 'lucide-react'
 import { NearMark, TokenBadge } from '@/components/ui'
 import { LandingFooter, LandingNav } from '@/components/landing/LandingChrome'
-import { CountUp, ForgeDiagram, HeroBackdrop, prefersReducedMotion, TiltStage } from '@/components/landing/HeroVisual'
+import { CountUp, ForgeDiagram, HeroBackdrop, InViewCountUp, prefersReducedMotion, TiltStage, Words } from '@/components/landing/HeroVisual'
+import { trackSpotlight, useScrollReveal } from '@/hooks/useScrollReveal'
+import myNearWalletIcon from '@/assets/wallets/my-near-wallet-icon.webp'
+import meteorWalletIcon from '@/assets/wallets/meteor-wallet-icon.webp'
+import hotWalletIcon from '@/assets/wallets/hot-wallet-icon.webp'
 import { isLiveMode } from '@/lib/near/wallet'
 import { explorerAccountUrl, getNearConfig } from '@/lib/near/config'
 import { isFillable } from '@/lib/contracts/marketplace'
@@ -99,6 +107,8 @@ export default function LandingPage() {
   }, [hash])
 
   const pending = live && loading ? '…' : '—'
+  const pageRef = useRef<HTMLDivElement>(null)
+  useScrollReveal(pageRef)
   const staking = useStakingApr()
 
   // The hero card cycles through the series every few seconds until the visitor picks one or hovers it.
@@ -153,10 +163,10 @@ export default function LandingPage() {
   const market = useMemo(() => {
     if (!live) {
       const open = demoListings.filter((l) => l.status === 'Open' || l.status === 'Partial').length
-      return { volume: `${amount(demoSeries.ytVolume)} NEAR`, open: String(open) }
+      return { volume: `${amount(demoSeries.ytVolume)} NEAR`, open: String(open), volumeNum: demoSeries.ytVolume, openNum: open }
     }
-    if (!all.data) return { volume: pending, open: pending }
-    return { volume: `${formatYocto(totals.volume, 4)} NEAR`, open: String(totals.open) }
+    if (!all.data) return { volume: pending, open: pending, volumeNum: null, openNum: null }
+    return { volume: `${formatYocto(totals.volume, 4)} NEAR`, open: String(totals.open), volumeNum: yoctoToNumber(totals.volume, 6), openNum: totals.open }
   }, [live, all.data, totals, pending])
 
   const tvl = backing ? yoctoToNumber(backing.held, 6) : null
@@ -185,7 +195,7 @@ export default function LandingPage() {
   }, [rows, staking.aprPercent])
 
   return (
-    <div className="lp">
+    <div className="lp" ref={pageRef} onPointerMove={trackSpotlight}>
       <LandingNav page="home" />
 
       <header className="lp-hero">
@@ -357,18 +367,35 @@ export default function LandingPage() {
         </div>
       </header>
 
-      <section className="lp-wrap lp-stats" aria-label="Protocol metrics">
-        <Stat label="Total value locked" value={tvl != null ? amount(tvl) : pending} unit="stNEAR" detail={tvlNear != null ? `≈ ${amount(tvlNear)} NEAR · all series` : 'stNEAR held by the series contracts'} />
-        <Stat label="Collateral ratio" value={backing?.ratio != null ? fixed(backing.ratio, 2) : backing ? 'n/a' : pending} unit={backing?.ratio != null ? '%' : ''} detail={backing?.ratio != null ? 'stNEAR held / maximum claims' : 'No deposits yet'} accent />
-        <Stat label="YT volume filled" value={market.volume} detail="Executed fills, fees excluded" />
-        <Stat label="Open listings" value={market.open} detail="Fixed-price YT offers" />
-        <Stat label="Live series" value={all.data ? String(rows.length) : pending} detail={rows.length ? [...new Set(rows.map((r) => tenorLabel(r.display)))].join(' · ') : 'Tenor ladder'} />
+      <section className="lp-wrap lp-stats" aria-label="Protocol metrics" data-reveal-stagger="up">
+        <Stat
+          label="Total value locked"
+          value={tvl != null ? amount(tvl) : pending}
+          num={tvl}
+          digits={tvl != null && tvl >= 1000 ? 0 : tvl != null && tvl >= 1 ? 2 : 4}
+          unit="stNEAR"
+          detail={tvlNear != null ? `≈ ${amount(tvlNear)} NEAR · all series` : 'stNEAR held by the series contracts'}
+        />
+        <Stat
+          label="Collateral ratio"
+          value={backing?.ratio != null ? fixed(backing.ratio, 2) : backing ? 'n/a' : pending}
+          num={backing?.ratio ?? null}
+          digits={2}
+          unit={backing?.ratio != null ? '%' : ''}
+          detail={backing?.ratio != null ? 'stNEAR held / maximum claims' : 'No deposits yet'}
+          accent
+        />
+        <Stat label="YT volume filled" value={market.volume} num={market.volumeNum} digits={4} unit={market.volumeNum != null ? 'NEAR' : undefined} detail="Executed fills, fees excluded" />
+        <Stat label="Open listings" value={market.open} num={market.openNum} detail="Fixed-price YT offers" />
+        <Stat label="Live series" value={all.data ? String(rows.length) : pending} num={all.data ? rows.length : null} detail={rows.length ? [...new Set(rows.map((r) => tenorLabel(r.display)))].join(' · ') : 'Tenor ladder'} />
       </section>
-      <p className="lp-wrap lp-source">
+      <p className="lp-wrap lp-source" data-reveal="up">
         {live
           ? `Read directly from NEAR ${cfg.network} on page load and summed over every series: get_series, get_listings, get_st_near_price, ft_balance_of.`
           : 'Demo mode: these numbers are a labelled snapshot, not chain data.'}
       </p>
+
+      <Ecosystem />
 
       <section className="lp-section" id="how" aria-labelledby="how-title">
         <div className="lp-wrap">
@@ -376,7 +403,7 @@ export default function LandingPage() {
             Staking rewards make each stNEAR worth more NEAR over time. YieldForge separates that growth from the principal, so each side can be held or traded on its
             own.
           </SectionHead>
-          <ol className="lp-steps">
+          <ol className="lp-steps" data-reveal-stagger="up">
             <Step n="01" icon={Coins} title="Stake">
               Turn NEAR into Meta Pool stNEAR. Rewards accrue in the stNEAR rate, not as new tokens.
             </Step>
@@ -390,7 +417,7 @@ export default function LandingPage() {
               After maturity anyone records the final rate RT. Holders burn PT or YT and receive stNEAR.
             </Step>
           </ol>
-          <div className="lp-formula" aria-label="Payout formulas">
+          <div className="lp-formula" aria-label="Payout formulas" data-reveal="zoom">
             <div>
               <TokenBadge kind="PT" />
               <code>min(R0, RT) ÷ RT</code>
@@ -416,7 +443,7 @@ export default function LandingPage() {
             Every series has two sides of the same stNEAR. Pick the one that matches your view on staking rewards.
           </SectionHead>
           <div className="lp-strategies">
-            <article className="lp-strategy">
+            <article className="lp-strategy lp-spot" data-reveal="left">
               <TokenBadge kind="PT" size="lg" />
               <h3>Fix your yield</h3>
               <p>Deposit stNEAR, keep the PT, and sell the YT. You receive NEAR now and redeem your principal value at maturity.</p>
@@ -435,7 +462,7 @@ export default function LandingPage() {
                 Deposit stNEAR <ArrowRight size={15} aria-hidden />
               </Link>
             </article>
-            <article className="lp-strategy lp-strategy-dark">
+            <article className="lp-strategy lp-strategy-dark lp-spot lp-beam" data-reveal="right">
               <TokenBadge kind="YT" size="lg" />
               <h3>Amplify the yield</h3>
               <p>Buy YT for a fraction of the principal and receive all of the rate growth from R0 to RT on the full amount.</p>
@@ -463,7 +490,9 @@ export default function LandingPage() {
           <SectionHead index="03" eyebrow="Simulator" title="Run the numbers before you sign." id="simulate-title">
             Uses the live terms of the series you pick. Change the deposit, your expected staking APR, and the YT price to see both sides of the trade.
           </SectionHead>
-          <Simulator rows={rows} featuredId={featured?.contractId ?? null} />
+          <div data-reveal="zoom">
+            <Simulator rows={rows} featuredId={featured?.contractId ?? null} />
+          </div>
         </div>
       </section>
 
@@ -476,7 +505,7 @@ export default function LandingPage() {
           {rows.length === 0 ? (
             <p className="lp-series-empty">{loading ? 'Reading the series from the chain…' : 'No series could be read from the chain right now.'}</p>
           ) : (
-            <div className="lp-series-grid">
+            <div className="lp-series-grid" data-reveal-stagger="up">
               {rows.map((row) => (
                 <SeriesCard key={row.contractId} row={row} live={live} />
               ))}
@@ -490,8 +519,8 @@ export default function LandingPage() {
           <SectionHead index="05" eyebrow="Security model" title="Payouts enforced by code, not promises." id="security-title">
             The rules below are properties of the series contract. You can check each one against the chain.
           </SectionHead>
-          <div className="lp-security">
-            <article className="lp-sec lp-sec-feature">
+          <div className="lp-security" data-reveal-stagger="up">
+            <article className="lp-sec lp-sec-feature lp-spot lp-beam">
               <span className="lp-sec-icon" aria-hidden>
                 <Scale size={18} />
               </span>
@@ -536,7 +565,7 @@ export default function LandingPage() {
               The owner can pause new deposits and trades, and withdraw deposit fees. Redemptions and settlement can never be paused.
             </SecurityCard>
           </div>
-          <div className="lp-disclosure" role="note">
+          <div className="lp-disclosure" role="note" data-reveal="up">
             <TriangleAlert size={18} aria-hidden />
             <div>
               <strong>Know the risks</strong>
@@ -555,7 +584,7 @@ export default function LandingPage() {
           <SectionHead index="06" eyebrow="FAQ" title="Straight answers." id="faq-title">
             Still unsure? The Series page lists every rule and risk in full.
           </SectionHead>
-          <div className="lp-faq">
+          <div className="lp-faq" data-reveal-stagger="right">
             <Faq q="Where does the YT yield actually come from?">
               From NEAR staking rewards. Meta Pool stakes the NEAR behind stNEAR, and rewards raise the stNEAR rate. At settlement the contract gives YT holders
               the part of the deposited stNEAR that represents growth from R0 to RT. The seller gave that growth up in exchange for NEAR paid up front.
@@ -583,7 +612,7 @@ export default function LandingPage() {
       </section>
 
       <section className="lp-cta" aria-labelledby="cta-title">
-        <div className="lp-wrap lp-cta-inner">
+        <div className="lp-wrap lp-cta-inner" data-reveal="zoom">
           <div>
             <span className="lp-mono-label">YieldForge on NEAR {cfg.network}</span>
             <h2 id="cta-title">Put a price on tomorrow’s yield.</h2>
@@ -604,12 +633,64 @@ export default function LandingPage() {
   )
 }
 
-function Stat({ label, value, unit, detail, accent = false }: { label: string; value: string; unit?: string; detail: string; accent?: boolean }) {
+const ECOSYSTEM: Array<{ label: string; icon?: Icon; img?: string; near?: boolean }> = [
+  { label: 'NEAR Protocol', near: true },
+  { label: 'Meta Pool stNEAR', icon: Coins },
+  { label: 'NEP-141 · NEP-145 · NEP-297', icon: Layers },
+  { label: 'Rust · near-sdk 5', icon: Braces },
+  { label: 'MyNearWallet', img: myNearWalletIcon },
+  { label: 'Meteor Wallet', img: meteorWalletIcon },
+  { label: 'HOT Wallet', img: hotWalletIcon },
+  { label: 'NearBlocks', icon: Search },
+  { label: 'FastNEAR RPC', icon: Zap },
+]
+
+/** A slow marquee of what YieldForge is built on and works with (pauses on hover). */
+function Ecosystem() {
+  const items = ECOSYSTEM.map(({ label, icon: IconCmp, img, near }) => (
+    <li key={label}>
+      {near ? <NearMark className="lp-eco-near" /> : img ? <img src={img} alt="" width={18} height={18} /> : IconCmp ? <IconCmp size={15} aria-hidden /> : null}
+      {label}
+    </li>
+  ))
+  return (
+    <section className="lp-eco" aria-label="Built on" data-reveal="up">
+      <div className="lp-wrap lp-eco-inner">
+        <span className="lp-mono-label">Built on &amp; works with</span>
+        <div className="lp-eco-track">
+          <ul className="lp-eco-list">{items}</ul>
+          <ul className="lp-eco-list" aria-hidden>
+            {items}
+          </ul>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function Stat({
+  label,
+  value,
+  num = null,
+  digits = 0,
+  unit,
+  detail,
+  accent = false,
+}: {
+  label: string
+  value: string
+  /** When known, the value counts up from 0 as the strip scrolls into view. */
+  num?: number | null
+  digits?: number
+  unit?: string
+  detail: string
+  accent?: boolean
+}) {
   return (
     <div className={`lp-stat ${accent ? 'lp-stat-accent' : ''}`}>
       <span>{label}</span>
       <strong>
-        {value}
+        {num != null ? <InViewCountUp value={num} digits={digits} /> : value}
         {unit ? <small> {unit}</small> : null}
       </strong>
       <em>{detail}</em>
@@ -619,11 +700,13 @@ function Stat({ label, value, unit, detail, accent = false }: { label: string; v
 
 function SectionHead({ index, eyebrow, title, id, children }: { index: string; eyebrow: string; title: string; id: string; children: ReactNode }) {
   return (
-    <div className="lp-head">
+    <div className="lp-head" data-reveal-stagger="up">
       <span className="lp-eyebrow">
         <b>{index}</b> {eyebrow}
       </span>
-      <h2 id={id}>{title}</h2>
+      <h2 id={id} aria-label={title}>
+        <Words text={title} />
+      </h2>
       <p>{children}</p>
     </div>
   )
@@ -631,7 +714,7 @@ function SectionHead({ index, eyebrow, title, id, children }: { index: string; e
 
 function Step({ n, icon: IconCmp, title, children }: { n: string; icon: Icon; title: string; children: ReactNode }) {
   return (
-    <li className="lp-step">
+    <li className="lp-step lp-spot">
       <div className="lp-step-top">
         <span className="lp-step-icon" aria-hidden>
           <IconCmp size={18} />
@@ -646,7 +729,7 @@ function Step({ n, icon: IconCmp, title, children }: { n: string; icon: Icon; ti
 
 function SecurityCard({ icon: IconCmp, title, children }: { icon: Icon; title: string; children: ReactNode }) {
   return (
-    <article className="lp-sec">
+    <article className="lp-sec lp-spot">
       <span className="lp-sec-icon" aria-hidden>
         <IconCmp size={18} />
       </span>
@@ -862,7 +945,7 @@ function SeriesCard({ row, live }: { row: SeriesSnapshot; live: boolean }) {
         ? 'Matured · awaiting settlement'
         : `Matures in ${countdown(d.maturityMs)}`
   return (
-    <article className={`lp-series ${d.depositsOpen ? 'lp-series-open' : ''}`}>
+    <article className={`lp-series lp-spot ${d.depositsOpen ? 'lp-series-open' : ''}`}>
       <div className="lp-series-head">
         <span className="lp-tenor">{tenorLabel(d)}</span>
         <div>

@@ -348,6 +348,79 @@ html:has(.lp) { scroll-behavior: smooth; }
   .lp-hero-visual .lp-live { transform: none !important; }
 }
 
+/* Scroll effects: blur-fade reveals, staggered cards, word-by-word headings, spotlight cards, border beam,
+   a marquee and nav progress. Patterns from Magic UI, Aceternity UI and beUI, in plain CSS. */
+.lp { --reveal-ease: cubic-bezier(.2, .7, .2, 1); }
+.lp [data-reveal], .lp [data-reveal-stagger] > * { opacity: 0; translate: 0 28px; filter: blur(6px); transition: opacity .8s var(--reveal-ease), translate .8s var(--reveal-ease), scale .8s var(--reveal-ease), filter .8s var(--reveal-ease); transition-delay: calc(var(--i, 0) * 80ms); }
+.lp [data-reveal='left'], .lp [data-reveal-stagger='left'] > * { translate: -48px 0; }
+.lp [data-reveal='right'], .lp [data-reveal-stagger='right'] > * { translate: 48px 0; }
+.lp [data-reveal='zoom'], .lp [data-reveal-stagger='zoom'] > * { translate: 0 18px; scale: .95; }
+.lp [data-reveal][data-in], .lp [data-reveal-stagger][data-in] > * { opacity: 1; translate: none; scale: none; filter: none; }
+
+/* Section headings: the title blurs in word by word instead of fading as one block */
+.lp .lp-head[data-reveal-stagger] > h2 { opacity: 1; translate: none; filter: none; }
+.lp-word { display: inline-block; transition: opacity .7s var(--reveal-ease), filter .7s var(--reveal-ease), translate .7s var(--reveal-ease); transition-delay: calc(140ms + var(--w, 0) * 55ms); }
+.lp .lp-head[data-reveal-stagger] .lp-word { opacity: 0; filter: blur(8px); translate: 0 .32em; }
+.lp .lp-head[data-in] .lp-word { opacity: 1; filter: none; translate: none; }
+.lp-eyebrow b { position: relative; }
+.lp-head[data-reveal-stagger] .lp-eyebrow b::after, .lp-head[data-in] .lp-eyebrow b::after { content: ''; position: absolute; left: 0; right: 0; bottom: -3px; height: 2px; background: var(--acid-deep); transform-origin: left; transform: scaleX(0); transition: transform .7s var(--reveal-ease) .25s; }
+.lp-head[data-in] .lp-eyebrow b::after { transform: scaleX(1); }
+
+/* How it works: a line draws across the steps and the icons pop in */
+.lp-steps { position: relative; }
+.lp-steps::after { content: ''; position: absolute; left: -1px; right: -1px; top: -1px; height: 2px; background: var(--acid-deep); transform-origin: left; transform: scaleX(0); transition: transform 1.6s var(--reveal-ease) .15s; }
+.lp-steps[data-in]::after { transform: scaleX(1); }
+.lp-steps[data-reveal-stagger] .lp-step-icon { scale: .3; rotate: -20deg; }
+.lp-step-icon { transition: scale .6s cubic-bezier(.3, 1.6, .5, 1), rotate .6s var(--reveal-ease); transition-delay: calc(var(--i, 0) * 80ms + 260ms); }
+.lp-steps[data-in] .lp-step-icon { scale: 1; rotate: 0deg; }
+
+/* Series cards: the elapsed-time bar fills as the card appears */
+.lp-series-grid[data-reveal-stagger] .lp-series-bar i { scale: 0 1; }
+.lp-series-bar i { transform-origin: left; transition: scale 1.3s var(--reveal-ease); transition-delay: calc(var(--i, 0) * 80ms + 300ms); }
+.lp-series-grid[data-in] .lp-series-bar i { scale: 1 1; }
+
+/* Spotlight cards (Aceternity "card spotlight"): a glow follows the pointer; cards lift on hover */
+.lp-spot { position: relative; isolation: isolate; }
+.lp-spot::before { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none; opacity: 0; transition: opacity .35s ease; background: radial-gradient(340px circle at var(--sx, 50%) var(--sy, 50%), rgba(216, 243, 107, .28), transparent 60%); }
+.lp-spot:hover::before { opacity: 1; }
+.lp-strategy-dark.lp-spot::before, .lp-sec-feature.lp-spot::before { background: radial-gradient(380px circle at var(--sx, 50%) var(--sy, 50%), rgba(216, 243, 107, .14), transparent 60%); }
+.lp-sec, .lp-series, .lp-strategy { transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease; }
+.lp-sec:hover, .lp-series:hover, .lp-strategy:hover { transform: translateY(-4px); box-shadow: 0 22px 44px rgba(23, 28, 29, .1); }
+
+/* Border beam (Magic UI): a light travels around the dark cards' border */
+@property --lp-beam { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+.lp-beam::after { content: ''; position: absolute; inset: -1px; padding: 1.5px; pointer-events: none; background: conic-gradient(from var(--lp-beam), transparent 0deg 290deg, rgba(216, 243, 107, .2) 315deg, var(--acid) 350deg, transparent 360deg); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude; animation: lp-beam 7s linear infinite; }
+@keyframes lp-beam { to { --lp-beam: 360deg; } }
+
+/* Ecosystem marquee */
+.lp-eco { padding: 30px 0 0; }
+.lp-eco-inner { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 28px; }
+.lp-eco-inner > .lp-mono-label { color: var(--ink-muted); white-space: nowrap; }
+.lp-eco-track { display: flex; overflow: hidden; -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); }
+.lp-eco-list { list-style: none; display: flex; flex: 0 0 auto; gap: 36px; margin: 0; padding: 4px 36px 4px 0; animation: lp-marquee 40s linear infinite; }
+.lp-eco-track:hover .lp-eco-list { animation-play-state: paused; }
+.lp-eco-list li { display: inline-flex; align-items: center; gap: 9px; color: var(--ink-soft); font: 12px var(--mono); white-space: nowrap; }
+.lp-eco-list svg { color: var(--ink); }
+.lp-eco-list .lp-eco-near { width: 14px; height: 14px; }
+.lp-eco-list img { border-radius: 4px; }
+@keyframes lp-marquee { to { transform: translateX(-100%); } }
+
+/* Nav: reading progress and the section in view */
+.lp-progress { position: absolute; left: 0; right: 0; bottom: -1px; z-index: 1; height: 2px; background: linear-gradient(90deg, var(--acid-deep), var(--acid)); box-shadow: 0 0 12px rgba(216, 243, 107, .55); transform-origin: 0 50%; transform: scaleX(var(--p, 0)); pointer-events: none; }
+.lp-nav-links a { position: relative; }
+.lp-nav-links a::after { content: ''; position: absolute; left: 0; right: 0; bottom: -7px; height: 1px; background: var(--acid); transform: scaleX(0); transition: transform .25s ease; }
+.lp-nav-links a.lp-nav-active::after { transform: scaleX(1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .lp [data-reveal], .lp [data-reveal-stagger] > *, .lp .lp-head[data-reveal-stagger] .lp-word { opacity: 1 !important; translate: none !important; scale: none !important; filter: none !important; transition: none !important; }
+  .lp-steps::after, .lp-step-icon, .lp-series-bar i, .lp-eyebrow b::after { transition: none !important; }
+  .lp-beam::after { animation: none; }
+  .lp-eco-list { animation: none; flex-wrap: wrap; }
+  .lp-eco-list[aria-hidden] { display: none; }
+  .lp-eco-track { -webkit-mask-image: none; mask-image: none; }
+  .lp-sec:hover, .lp-series:hover, .lp-strategy:hover { transform: none; }
+}
+
 /* Responsive */
 @media (max-width: 1080px) {
   .lp-nav-links { display: none; }
@@ -417,4 +490,5 @@ html:has(.lp) { scroll-behavior: smooth; }
   .lp-cta-actions, .lp-cta-actions .lp-btn { width: 100%; }
   .lp-footer-grid { grid-template-columns: 1fr 1fr; }
   .lp-footer-base::before { left: 16px; right: 16px; }
+  .lp-eco-inner { grid-template-columns: minmax(0, 1fr); gap: 12px; }
 }

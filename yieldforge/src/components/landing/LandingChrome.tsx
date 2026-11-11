@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowUpRight } from 'lucide-react'
 import { NearMark } from '@/components/ui/TokenBadge'
@@ -27,14 +28,61 @@ function Brand() {
 export function LandingNav({ page }: { page: 'home' | 'docs' }) {
   const live = isLiveMode()
   const { network } = getNearConfig()
+  const barRef = useRef<HTMLSpanElement>(null)
+  const [active, setActive] = useState<string | null>(null)
+
+  // Reading progress: a thin bar under the nav that fills as the page scrolls.
+  useEffect(() => {
+    let frame = 0
+    const update = () => {
+      frame = 0
+      const doc = document.documentElement
+      const max = doc.scrollHeight - doc.clientHeight
+      barRef.current?.style.setProperty('--p', String(max > 0 ? Math.min(1, doc.scrollTop / max) : 0))
+    }
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(update)
+    }
+    update()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', onScroll)
+    return () => {
+      cancelAnimationFrame(frame)
+      window.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', onScroll)
+    }
+  }, [])
+
+  // Scroll spy: highlight the link of the section in the middle of the screen.
+  useEffect(() => {
+    if (page !== 'home' || !('IntersectionObserver' in window)) return
+    const visible = new Set<string>()
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) visible.add(entry.target.id)
+          else visible.delete(entry.target.id)
+        }
+        setActive(SECTIONS.find(([id]) => visible.has(id))?.[0] ?? null)
+      },
+      { rootMargin: '-45% 0px -50% 0px' },
+    )
+    for (const [id] of SECTIONS) {
+      const el = document.getElementById(id)
+      if (el) io.observe(el)
+    }
+    return () => io.disconnect()
+  }, [page])
+
   return (
     <nav className="lp-nav" aria-label="Main">
+      <span className="lp-progress" ref={barRef} aria-hidden />
       <div className="lp-wrap lp-nav-inner">
         <Brand />
         <div className="lp-nav-links">
           {SECTIONS.map(([id, label]) =>
             page === 'home' ? (
-              <a key={id} href={`#${id}`}>
+              <a key={id} href={`#${id}`} className={active === id ? 'lp-nav-active' : undefined} aria-current={active === id ? 'location' : undefined}>
                 {label}
               </a>
             ) : (

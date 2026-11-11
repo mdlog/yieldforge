@@ -30,6 +30,45 @@ export function CountUp({ value, digits, ms = 900 }: { value: number | null; dig
   return <>{shown.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })}</>
 }
 
+/** A number ticker (as in Magic UI) that counts up from 0 the first time it scrolls into view. */
+export function InViewCountUp({ value, digits }: { value: number; digits: number }) {
+  const ref = useRef<HTMLSpanElement>(null)
+  const [go, setGo] = useState(() => prefersReducedMotion())
+  useEffect(() => {
+    if (go) return
+    const el = ref.current
+    if (!el || !('IntersectionObserver' in window)) return setGo(true)
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.isIntersecting) return
+        setGo(true)
+        io.disconnect()
+      },
+      { threshold: 0.4 },
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [go])
+  return <span ref={ref}>{go ? <CountUp value={value} digits={digits} ms={1300} /> : (0).toFixed(digits)}</span>
+}
+
+/** Splits a heading into words that blur in one after another (the "text generate" effect). */
+export function Words({ text }: { text: string }) {
+  const words = text.split(' ')
+  return (
+    <>
+      {words.map((word, i) => (
+        <span key={i}>
+          <span className="lp-word" style={{ '--w': i } as CSSProperties}>
+            {word}
+          </span>
+          {i < words.length - 1 ? ' ' : ''}
+        </span>
+      ))}
+    </>
+  )
+}
+
 // Rising "yield motes" in the hero background: fixed positions so server and client render the same.
 const MOTES = [
   [6, 0], [14, 3.2], [23, 1.4], [31, 5.1], [42, 2.3], [50, 6.4], [57, 0.8], [66, 4.2], [74, 2.9], [83, 5.8], [91, 1.9], [97, 3.7],
