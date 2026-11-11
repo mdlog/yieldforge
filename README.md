@@ -145,11 +145,13 @@ Or browse the accounts on [NearBlocks testnet](https://testnet.nearblocks.io/add
 **App (React)**
 - Landing page with live protocol metrics, multi-series simulator and series ladder
 - **Deposit & sell** guided flow: stake NEAR → deposit stNEAR → list YT, on one page. Stake and deposit can go in **one
-  transaction** (two actions on the stNEAR contract, so a failed deposit also undoes the stake)
+  transaction** (two actions on the stNEAR contract: if it fails nothing is staked; if the series refuses the deposit, the
+  app reports it and the new stNEAR stays in the wallet)
 - **Real staking APR**: Meta Pool's 30-day stNEAR growth on mainnet, read from archival RPC, prices YT instead of a fixed
   assumption; the testnet rate is measured too, and the app warns when it is flat
 - Sellers see the **fixed APR they lock in** at their price; buyers see each listing's break-even APR against today's
-- **Buy YT**: every open listing across series, with price and break-even APR
+- **Buy YT**: every listing that can be filled now across series (expired listings and paused series left out), with
+  price and break-even APR
 - Portfolio across all series: balances, **projected payout at maturity** (exact once settled), listings (cancel),
   baseline/settlement calls, exact redemption preview
 - In-app docs with live deployment data, contract reference and risks
