@@ -191,7 +191,7 @@ Underlying: Meta Pool stNEAR, [`meta-v2.pool.testnet`](https://testnet.nearblock
 │   ├── src/lib/                # NEAR config, rate-limited RPC client, transaction builders
 │   ├── tests/                  # Unit tests (node --test)
 │   ├── server.mjs              # Dependency-free production server (static files + SPA fallback)
-│   └── .env.production         # Public build config (contract ids, RPC); no secrets
+│   └── .env.testnet            # Public testnet config (contract ids, RPC) for dev and build; no secrets
 ├── contracts/
 │   └── series/src/lib.rs       # Series contract: vault + YT (NEP-141) + PT ledger + YT market
 ├── scripts/                    # deploy-series, roll-series, keeper, e2e-testnet (testnet operations)
@@ -225,7 +225,7 @@ errors) and transactions signed in the user's wallet. There is no backend and no
 ```sh
 cd yieldforge
 npm install
-npm run dev          # http://localhost:3000, against the live testnet contracts in .env.production
+npm run dev          # http://localhost:3000, against the live testnet contracts in .env.testnet
 npm test             # unit tests
 npm run build        # typecheck + production build into dist/
 npm start            # serve dist/ on $PORT (default 3000), as on Railway
@@ -243,7 +243,8 @@ Toolchain notes (why `--cfg near`, pinned near-sdk 5.27, rustup first in `PATH`)
 
 ### Deploy and operate series (testnet)
 
-The scripts read `NEAR_ACCOUNT` and `NEAR_PRIVATE_KEY` from `yieldforge/.env`, which is git-ignored and never printed.
+The scripts read `NEAR_ACCOUNT` and `NEAR_PRIVATE_KEY` from `yieldforge/.env` (copy [`.env.example`](yieldforge/.env.example)),
+which is git-ignored and never printed, and the series list from `yieldforge/.env.testnet`.
 
 ```sh
 node scripts/deploy-series.mjs --account stnear-7d-03 --series-id stnear-7d-03 \
@@ -254,8 +255,9 @@ node scripts/keeper.mjs --dry-run                  # capture_baseline / request_
 
 ## Configuration
 
-Build-time settings are `VITE_*` variables. They are compiled into the browser bundle and therefore public; production values live in
-[`yieldforge/.env.production`](yieldforge/.env.production).
+Build-time settings are `VITE_*` variables. They are compiled into the browser bundle and therefore public. The testnet values live in
+[`yieldforge/.env.testnet`](yieldforge/.env.testnet), which `npm run dev` and `npm run build` load (`--mode testnet`), so a fresh
+clone runs against the deployed contracts with no setup. Leave `VITE_NEAR_LIVE` unset in a copy of the app to run it on demo data.
 
 | Variable | Purpose |
 | --- | --- |
@@ -289,7 +291,7 @@ Deploy keys (`NEAR_ACCOUNT`, `NEAR_PRIVATE_KEY`) are only for the scripts. Keep 
   no pre-existing product on another chain (Q-001, Q-002).
 - **Third-party code (Q-005):** the libraries listed under [Tech stack](#tech-stack). Meta Pool stNEAR is an external protocol this
   project builds on, not part of this repository. Parts of the code and documentation were written with AI coding assistants and
-  reviewed by the team.
+  reviewed by the team. The NEAR, Meta Pool and wallet logos belong to their owners and only identify those projects in the UI.
 - **Live demo:** https://yieldforge-production.up.railway.app, kept online through judging.
 
 ## License

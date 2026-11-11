@@ -16,13 +16,22 @@ export const STNEAR = 'meta-v2.pool.testnet'
 export const YOCTO = 10n ** 24n
 export const TGAS = 10n ** 12n
 
+/**
+ * yieldforge/.env (local, git-ignored: the deploy key) merged with yieldforge/.env.testnet (public app
+ * config, committed). As in Vite's testnet mode, values in .env.testnet win for the keys it sets.
+ */
 export function loadEnv() {
-  const file = path.join(ROOT, 'yieldforge', '.env')
-  const env = {}
-  for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
-    const m = line.match(/^([A-Z0-9_]+)=(.*)$/)
-    if (m) env[m[1]] = m[2].trim()
+  const read = (name) => {
+    const file = path.join(ROOT, 'yieldforge', name)
+    const env = {}
+    if (!fs.existsSync(file)) return env
+    for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+      const m = line.match(/^([A-Z0-9_]+)=(.*)$/)
+      if (m) env[m[1]] = m[2].trim()
+    }
+    return env
   }
+  const env = { ...read('.env'), ...read('.env.testnet') }
   if (!env.NEAR_ACCOUNT || !env.NEAR_PRIVATE_KEY) throw new Error('NEAR_ACCOUNT / NEAR_PRIVATE_KEY missing in yieldforge/.env')
   return env
 }

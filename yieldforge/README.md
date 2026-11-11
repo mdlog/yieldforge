@@ -72,21 +72,21 @@ tests/                  # node --test suites (29 tests)
 
 ## Configuration
 
-Copy `.env.example` → `.env`:
+No setup is needed: `npm run dev` and `npm run build` run Vite with `--mode testnet`, which loads the public,
+committed [`.env.testnet`](.env.testnet):
 
 ```
 VITE_NEAR_NETWORK=testnet          # testnet | mainnet
-VITE_NEAR_LIVE=false               # true = read/write the configured contracts
-VITE_E2E_MOCK=false                # test-only wallet injection; never enable in production
+VITE_NEAR_LIVE=true                # true = read/write the configured contracts; unset = labelled demo data
+# The ladder of series (first = default). Wins over VITE_SERIES_CONTRACT and the PT/YT/market overrides:
+VITE_SERIES_CONTRACTS=stnear-7d-02.solidnecktie5405.testnet,stnear-7d-01.solidnecktie5405.testnet,…
 VITE_SERIES_CONTRACT=stnear-90d-02.solidnecktie5405.testnet   # v2: vault + YT token + PT ledger + market
-# A ladder of series (first = default). Wins over VITE_SERIES_CONTRACT and the PT/YT/market overrides:
-VITE_SERIES_CONTRACTS=stnear-7d-01.solidnecktie5405.testnet,stnear-30d-01.solidnecktie5405.testnet,stnear-90d-02.solidnecktie5405.testnet
 VITE_STNEAR_CONTRACT=meta-v2.pool.testnet
-# VITE_PT_CONTRACT / VITE_YT_CONTRACT / VITE_MARKETPLACE_CONTRACT default to the series account
 VITE_NEAR_NODE_URL=https://rpc.testnet.fastnear.com
 ```
 
-Unset values fall back to the network defaults in `lib/near/config.ts`.
+Unset values fall back to the network defaults in `lib/near/config.ts`. A git-ignored `.env` (see
+[`.env.example`](.env.example)) holds the deploy key for `scripts/`; Vite gives `.env.testnet` priority over it.
 
 ### Several series
 
@@ -94,7 +94,7 @@ With `VITE_SERIES_CONTRACTS`, the app shows a series switcher in the top bar. Ap
 transact with the active series, and remount when it changes. The choice is remembered per browser,
 and a `?series=<contract>` link selects a series; listing links carry it because listing ids are per series.
 The landing page, docs and Portfolio read every series at once (`hooks/useAllSeries.ts`).
-The Deposit page shows the closed state of a past-cutoff series and offers the series that are open.
+Deposit & sell offers only series whose deposit window is open (plus the active one, shown as closed).
 
 View calls go through `lib/near/wallet.ts`, which shares identical in-flight calls, runs at most four at
 once and retries transport failures (public RPCs rate-limit bursts, and a 429 has no CORS headers).

@@ -10,8 +10,8 @@ yieldforge/dist-prev/
 .env
 .env.*
 !.env.example
-# Public VITE_* build config for production; checked into the repo on purpose (no secrets).
-!yieldforge/.env.production
+# Public VITE_* testnet config; checked into the repo on purpose (no secrets).
+!yieldforge/.env.testnet
 *.pem
 *.key
 .near-credentials/

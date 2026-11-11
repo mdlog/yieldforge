@@ -72,12 +72,15 @@ const ordered = [...listed]
 const firstSameTenor = ordered.findIndex((id) => pattern.test(id))
 ordered.splice(firstSameTenor === -1 ? ordered.length : firstSameTenor, 0, accountId)
 const line = `VITE_SERIES_CONTRACTS=${ordered.join(',')}`
-// .env drives local builds; .env.production (public, committed) drives production builds such as Railway.
-for (const name of ['.env', '.env.production']) {
+// .env.testnet (public, committed) holds the series list for dev, builds (Railway) and these scripts.
+// A local .env is only updated if it still carries its own copy of the list.
+for (const name of ['.env.testnet', '.env']) {
   const envFile = path.join(ROOT, 'yieldforge', name)
   if (!fs.existsSync(envFile)) continue
   const text = fs.readFileSync(envFile, 'utf8')
-  fs.writeFileSync(envFile, /^VITE_SERIES_CONTRACTS=.*$/m.test(text) ? text.replace(/^VITE_SERIES_CONTRACTS=.*$/m, line) : `${text.trimEnd()}\n${line}\n`)
+  const has = /^VITE_SERIES_CONTRACTS=.*$/m.test(text)
+  if (!has && name === '.env') continue
+  fs.writeFileSync(envFile, has ? text.replace(/^VITE_SERIES_CONTRACTS=.*$/m, line) : `${text.trimEnd()}\n${line}\n`)
   console.log(`updated yieldforge/${name}: ${line}`)
 }
-console.log('Rebuild the frontend, and commit and push .env.production, so the app lists it.')
+console.log('Commit and push yieldforge/.env.testnet so the app (and Railway) lists it.')
