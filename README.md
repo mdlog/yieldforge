@@ -28,8 +28,8 @@
 </p>
 
 <p align="center">
-  <a href="https://yieldforge-production.up.railway.app"><strong>Live demo</strong></a> ·
-  <a href="https://yieldforge-production.up.railway.app/docs">In-app docs</a> ·
+  <a href="https://yieldforge.mdloglabs.org"><strong>Live demo</strong></a> ·
+  <a href="https://yieldforge.mdloglabs.org/docs">In-app docs</a> ·
   <a href="#try-it-judge-walkthrough">Try it</a> ·
   <a href="#deployed-contracts-near-testnet">Contracts</a> ·
   <a href="#near-hackathon">NEAR HACKATHON</a>
@@ -94,7 +94,7 @@ tenor closes, so there is always somewhere to deposit.
 
 ## Try it (judge walkthrough)
 
-**Live demo:** https://yieldforge-production.up.railway.app (NEAR testnet, live contracts). Every number on screen is read from
+**Live demo:** https://yieldforge.mdloglabs.org (NEAR testnet, live contracts). Every number on screen is read from
 the chain on page load.
 
 ### A. Without a wallet (about 2 minutes)
@@ -306,7 +306,7 @@ Deploy keys (`NEAR_ACCOUNT`, `NEAR_PRIVATE_KEY`) are only for the scripts. Keep 
 - **Third-party code (Q-005):** the libraries listed under [Tech stack](#tech-stack). Meta Pool stNEAR is an external protocol this
   project builds on, not part of this repository. Parts of the code and documentation were written with AI coding assistants and
   reviewed by the team. The NEAR, Meta Pool and wallet logos belong to their owners and only identify those projects in the UI.
-- **Live demo:** https://yieldforge-production.up.railway.app, kept online through judging.
+- **Live demo:** https://yieldforge.mdloglabs.org, kept online through judging.
 
 ## License
 
