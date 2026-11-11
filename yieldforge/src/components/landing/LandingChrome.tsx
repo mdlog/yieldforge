@@ -149,6 +149,9 @@ export function LandingFooter() {
           <a href={cfg.explorerUrl} target="_blank" rel="noreferrer">
             NearBlocks <ArrowUpRight size={12} aria-hidden />
           </a>
+          <a href="https://github.com/mdlog/yieldforge" target="_blank" rel="noreferrer">
+            Source code <ArrowUpRight size={12} aria-hidden />
+          </a>
         </div>
       </div>
       <div className="lp-wrap lp-footer-base">

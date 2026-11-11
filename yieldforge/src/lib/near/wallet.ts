@@ -82,6 +82,18 @@ export function viewAccessKeys(accountId: string): Promise<Array<'FullAccess' | 
   })
 }
 
+/** Base58 SHA-256 of the code deployed on an account, or null when the account has no contract. */
+export function viewCodeHash(accountId: string): Promise<string | null> {
+  return shared(`code|${accountId}`, async () => {
+    const result = await rpcQuery<{ code_hash?: string }>(
+      { request_type: 'view_account', account_id: accountId, finality: 'final' },
+      `${accountId} code hash`,
+    )
+    // An account without a contract reports the all-ones hash.
+    return result.code_hash && !/^1+$/.test(result.code_hash) ? result.code_hash : null
+  })
+}
+
 /** Spendable NEAR (yocto): the account balance minus what its own storage locks. */
 export function getNearBalance(accountId: string): Promise<string> {
   return shared(`account|${accountId}`, async () => {

@@ -8,6 +8,10 @@
 .docs-hero .lp-mono-label { color: var(--acid); }
 .docs-hero h1 { margin: 14px 0 14px; font-size: clamp(36px, 4.6vw, 58px); line-height: .98; letter-spacing: -.065em; }
 .docs-hero p { max-width: 640px; margin: 0; color: #aab2ae; font-size: 16px; line-height: 1.6; }
+.docs-hero p.docs-hero-meta { max-width: none; margin-top: 14px; color: #8f9993; font: 12px/1.6 var(--mono); }
+.docs-hero-meta a { display: inline-flex; align-items: center; gap: 3px; color: var(--acid); text-decoration: none; }
+.docs-hero-meta a:hover { text-decoration: underline; }
+.docs-hero-meta code { color: var(--white); font: inherit; }
 .docs-quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 36px; }
 .docs-quick-card { display: grid; gap: 6px; padding: 18px; color: var(--white); text-decoration: none; background: #1d2324; border: 1px solid #343d3b; transition: border-color .18s ease, transform .18s ease; }
 .docs-quick-card:hover { border-color: var(--acid); transform: translateY(-2px); }
@@ -66,11 +70,10 @@
 .docs-table-num tr:last-child td { color: var(--ink); font-weight: 700; background: var(--paper); }
 .docs-table-ref td:first-child { min-width: 190px; font-weight: 400; }
 .docs-table-ref td small { display: block; margin-top: 4px; color: var(--ink-muted); font: 11px var(--mono); }
+.docs-table-ref code.docs-error-msg { display: table; margin-bottom: 4px; }
 .docs-row-now td { background: rgba(216, 243, 107, .22); }
 .docs-now { display: inline-block; margin-left: 8px; padding: 2px 6px; font: 10px var(--mono); font-style: normal; color: var(--ink); background: var(--acid); vertical-align: 1px; }
 
-.docs-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
-.docs-chips code { display: inline-block; padding: 5px 9px; }
 
 .docs-kv { margin: 0; display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); background: var(--white); }
 .docs-kv > div { display: grid; gap: 4px; padding: 14px 16px; border-bottom: 1px solid var(--line); min-width: 0; }
