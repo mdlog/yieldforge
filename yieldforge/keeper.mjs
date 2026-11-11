@@ -7,7 +7,8 @@
 //   npm run keeper -- --dry-run     only report what is due (no key needed)
 //
 // Series and RPC come from VITE_SERIES_CONTRACTS / VITE_NEAR_NODE_URL in the environment, else from
-// .env.testnet next to this file. The key is never printed. Exits non-zero if a due call fails.
+// .env.testnet next to this file. The key is never printed. Each run also checks that the key is on chain for
+// KEEPER_ACCOUNT, and exits non-zero if it is not or a due call fails.
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -100,10 +101,32 @@ async function call(contractId, method) {
   }
 }
 
+// Prove on every run, without a transaction, that the key can sign for the keeper account, so a bad key
+// shows up as a failed run long before a cutoff is due.
+async function checkSigner() {
+  const accountId = env.KEEPER_ACCOUNT
+  const key = env.KEEPER_PRIVATE_KEY
+  if (!accountId || !key) {
+    failures++
+    return console.log('signer: KEEPER_ACCOUNT / KEEPER_PRIVATE_KEY are not set, so due calls would fail')
+  }
+  const publicKey = KeyPair.fromString(key).getPublicKey().toString()
+  try {
+    const access = await rpc('query', { request_type: 'view_access_key', account_id: accountId, public_key: publicKey, finality: 'final' })
+    if (access.error) throw new Error(access.error)
+    const account = await rpc('query', { request_type: 'view_account', account_id: accountId, finality: 'final' })
+    console.log(`signer ${accountId} · key ${publicKey} is on chain · balance ${rate(account.amount)} NEAR`)
+  } catch (e) {
+    failures++
+    console.log(`signer ${accountId}: key ${publicKey} not usable (${e.message})`)
+  }
+}
+
 // Due-ness follows the chain's clock, not this machine's.
 const block = await rpc('block', { finality: 'final' })
 const chainNow = BigInt(block.header.timestamp_nanosec ?? block.header.timestamp)
 console.log(`chain time ${iso(chainNow)} · ${ids.length} series${dryRun ? ' · dry run' : ''}`)
+if (!dryRun) await checkSigner()
 
 for (const id of ids) {
   const s = await view(id, 'get_series').catch((e) => {
