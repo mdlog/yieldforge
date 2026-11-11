@@ -43,7 +43,7 @@ html:has(.lp) { scroll-behavior: smooth; }
 .lp-net .lp-net-near { width: 11px; height: 11px; color: var(--white); }
 
 /* Hero */
-.lp-hero { position: relative; color: var(--white); background-color: var(--ink); background-image: radial-gradient(60% 70% at 85% 10%, rgba(216, 243, 107, .14), transparent 60%), linear-gradient(rgba(255, 255, 255, .035) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, .035) 1px, transparent 1px); background-size: auto, 56px 56px, 56px 56px; padding: 84px 0 128px; }
+.lp-hero { position: relative; color: var(--white); background-color: var(--ink); padding: 84px 0 128px; }
 .lp-hero-grid { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(340px, .88fr); gap: 64px; align-items: center; }
 .lp-kicker { display: inline-flex; align-items: center; gap: 10px; padding: 7px 12px; border: 1px solid #3a4442; color: #c5ccc7; font: 11px var(--mono); letter-spacing: .06em; }
 .lp-pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--acid); box-shadow: 0 0 0 0 rgba(216, 243, 107, .6); animation: lp-pulse 2.2s ease-out infinite; }
@@ -255,7 +255,6 @@ html:has(.lp) { scroll-behavior: smooth; }
 /* Hero: depth and motion (all of it switches off under prefers-reduced-motion) */
 .lp-hero { overflow: hidden; isolation: isolate; background: #121718; background-image: none; padding: 76px 0 132px; }
 .lp-hero-bg { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
-.lp-hero-lines { position: absolute; inset: 0; background-image: linear-gradient(rgba(255, 255, 255, .045) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, .045) 1px, transparent 1px); background-size: 56px 56px; -webkit-mask-image: radial-gradient(ellipse 72% 62% at 62% 36%, #000 22%, transparent 78%); mask-image: radial-gradient(ellipse 72% 62% at 62% 36%, #000 22%, transparent 78%); }
 .lp-aurora { position: absolute; border-radius: 50%; filter: blur(60px); will-change: transform; animation: lp-drift 20s ease-in-out infinite alternate; }
 .lp-aurora-1 { width: 620px; height: 620px; top: -260px; right: -140px; background: radial-gradient(circle, rgba(216, 243, 107, .34), transparent 64%); }
 .lp-aurora-2 { width: 680px; height: 680px; bottom: -380px; left: -240px; background: radial-gradient(circle, rgba(85, 114, 139, .55), transparent 64%); animation-duration: 26s; animation-direction: alternate-reverse; }

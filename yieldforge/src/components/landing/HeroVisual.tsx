@@ -35,14 +35,13 @@ const MOTES = [
   [6, 0], [14, 3.2], [23, 1.4], [31, 5.1], [42, 2.3], [50, 6.4], [57, 0.8], [66, 4.2], [74, 2.9], [83, 5.8], [91, 1.9], [97, 3.7],
 ] as const
 
-/** Decorative hero background: drifting aurora, a fading grid and rising motes. */
+/** Decorative hero background: drifting aurora and rising motes. */
 export function HeroBackdrop() {
   return (
     <div className="lp-hero-bg" aria-hidden>
       <span className="lp-aurora lp-aurora-1" />
       <span className="lp-aurora lp-aurora-2" />
       <span className="lp-aurora lp-aurora-3" />
-      <span className="lp-hero-lines" />
       {MOTES.map(([left, delay]) => (
         <span key={left} className="lp-mote" style={{ left: `${left}%`, animationDelay: `${delay}s` } as CSSProperties} />
       ))}
