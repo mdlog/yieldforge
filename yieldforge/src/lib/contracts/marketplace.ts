@@ -3,6 +3,7 @@ import { viewCall } from '@/lib/near/wallet'
 import { getNearConfig } from '@/lib/near/config'
 import { functionCall, ONE_YOCTO, tgas, type TxRequest } from '@/lib/near/tx'
 import { formatNanosDate, yoctoToNumber } from '@/utils/format'
+import { listingOpenAt } from '@/utils/math'
 import { pickOptional, pickString, type RawView } from './normalize'
 
 /** Covers a listing's on-chain storage; the contract refunds whatever it doesn't use. */
@@ -42,8 +43,14 @@ export async function fetchListing(listingId: string): Promise<ListingView | nul
   return raw ? normalizeListing(raw) : null
 }
 
+/** Open on chain. Includes listings past their expiry, which only their seller can still act on (cancel). */
 export function isFillable(view: ListingView): boolean {
   return view.status === 'OPEN' || view.status === 'PARTIALLY_FILLED'
+}
+
+/** What a buyer can actually fill right now: open on chain and not past its expiry. */
+export function isBuyable(view: ListingView): boolean {
+  return isFillable(view) && listingOpenAt(view.expiresAt, Date.now())
 }
 
 const STATUS_LABEL: Record<ListingViewStatus, ListingStatus> = {
@@ -73,7 +80,8 @@ export function toUiListing(view: ListingView): Listing {
     unitPrice: yoctoToNumber(view.unitPrice, 4),
     settlement: view.settlementAsset,
     expiry: formatNanosDate(view.expiresAt),
-    status: STATUS_LABEL[view.status] ?? 'Open',
+    // The chain keeps an expired listing OPEN until expire_listing runs; show it as what it is.
+    status: isFillable(view) && !listingOpenAt(view.expiresAt, Date.now()) ? 'Expired' : (STATUS_LABEL[view.status] ?? 'Open'),
     filled: yoctoToNumber(filled, 2),
     created: 'on-chain',
     unitPriceYocto: view.unitPrice,

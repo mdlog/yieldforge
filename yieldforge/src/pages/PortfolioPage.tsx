@@ -549,7 +549,8 @@ export default function PortfolioPage() {
                           <span className="owned-label">Expiry</span>
                           <strong>{l.expiry}</strong>
                         </div>
-                        <StatusPill tone={open ? 'success' : 'neutral'}>{l.status}</StatusPill>
+                        {/* An expired listing stays open on chain until cancelled, so it keeps its Cancel button. */}
+                        <StatusPill tone={!open ? 'neutral' : l.status === 'Expired' ? 'warning' : 'success'}>{l.status}</StatusPill>
                         {open ? (
                           <button
                             className="text-link"

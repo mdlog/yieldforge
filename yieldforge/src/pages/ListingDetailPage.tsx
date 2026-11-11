@@ -8,7 +8,7 @@ import { useToast } from '@/contexts/ToastContext'
 import { isLiveMode } from '@/lib/near/wallet'
 import { explorerAccountUrl, getNearConfig } from '@/lib/near/config'
 import { needsStorageDeposit, storageMinimum } from '@/lib/near/tx'
-import { buildBuyTx, fetchListing, isFillable, toUiListing } from '@/lib/contracts/marketplace'
+import { buildBuyTx, fetchListing, isBuyable, toUiListing } from '@/lib/contracts/marketplace'
 import { useLiveListing } from '@/hooks/useLiveData'
 import { useNearQuery } from '@/hooks/useNearQuery'
 import { useSeriesDisplay } from '@/hooks/useSeriesDisplay'
@@ -131,7 +131,7 @@ export default function ListingDetailPage() {
     }
     // Re-read right before signing so a stale page can't overfill or hit a closed listing.
     const fresh = await fetchListing(listing.id).catch(() => null)
-    if (fresh && !isFillable(fresh)) return push('This listing was just filled or cancelled.')
+    if (fresh && !isBuyable(fresh)) return push('This listing was just filled or cancelled, or it has expired.')
     if (fresh && qtyYocto > toBigInt(fresh.quantityRemaining)) return push(`Only ${formatYocto(fresh.quantityRemaining, 4)} YT remain. Try a smaller amount.`)
     const hash = await tx.execute(buildBuyTx({ listingId: listing.id, quantityYocto: qtyYocto.toString(), attachedDepositYocto: (cost.total + storageYocto).toString() }))
     if (hash) push('Purchase sent. Your YT arrives once it confirms.', 'success')

@@ -33,7 +33,7 @@ import meteorWalletIcon from '@/assets/wallets/meteor-wallet-icon.webp'
 import hotWalletIcon from '@/assets/wallets/hot-wallet-icon.webp'
 import { isLiveMode } from '@/lib/near/wallet'
 import { explorerAccountUrl, getNearConfig } from '@/lib/near/config'
-import { isFillable } from '@/lib/contracts/marketplace'
+import { isBuyable } from '@/lib/contracts/marketplace'
 import { demoSeries, listings as demoListings } from '@/lib/demoData'
 import { withSeries } from '@/contexts/SeriesContext'
 import { bySchedule, tenorLabel, useAllSeries, type SeriesSnapshot } from '@/hooks/useAllSeries'
@@ -153,7 +153,7 @@ export default function LandingPage() {
       }
       fees += d.feeBalanceYocto ?? 0n
       volume += filledVolumeYocto(r.listings)
-      open += r.listings.filter(isFillable).length
+      open += r.listings.filter(isBuyable).length
     }
     const required = claims + fees
     return { held, claims, fees, volume, open, complete, ratio: complete && required > 0n ? Number((held * 10_000n) / required) / 100 : null }
@@ -985,7 +985,7 @@ function SeriesCard({ row, live }: { row: SeriesSnapshot; live: boolean }) {
         </div>
         <div>
           <dt>Open listings</dt>
-          <dd>{live ? row.listings.filter(isFillable).length : '—'}</dd>
+          <dd>{live ? row.listings.filter(isBuyable).length : '—'}</dd>
         </div>
       </dl>
       <div className="lp-series-actions">

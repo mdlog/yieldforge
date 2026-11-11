@@ -5,7 +5,7 @@ import { Button, DemoBanner, FlatRateNote, InlineEmpty, Panel, TokenBadge } from
 import { listings as demoListings } from '@/lib/demoData'
 import { isLiveMode } from '@/lib/near/wallet'
 import { withSeries } from '@/contexts/SeriesContext'
-import { isFillable, toUiListing } from '@/lib/contracts/marketplace'
+import { isBuyable, toUiListing } from '@/lib/contracts/marketplace'
 import { bySchedule, tenorLabel, useAllSeries } from '@/hooks/useAllSeries'
 import type { SeriesDisplay } from '@/hooks/useSeriesDisplay'
 import { isRateFlat, useStakingApr } from '@/hooks/useStakingApr'
@@ -46,7 +46,9 @@ export default function MarketplacePage() {
     for (const row of rows) {
       const d = row.display
       const r0 = d.baselineRate ?? d.currentRate
-      const listings = live ? row.listings.filter(isFillable).map(toUiListing) : demoListings.filter((l) => l.status === 'Open' || l.status === 'Partial')
+      // Only what can be filled now: the contract refuses expired listings and every fill while a series is paused.
+      const buyable = d.phase === 'Paused' ? [] : row.listings.filter(isBuyable)
+      const listings = live ? buyable.map(toUiListing) : demoListings.filter((l) => l.status === 'Open' || l.status === 'Partial')
       for (const listing of listings) {
         out.push({ contractId: row.contractId, series: d, listing, breakEven: r0 ? breakEvenApr(unitPrice(listing), d.marketFeeBps ?? MARKET_FEE_BPS, r0, yieldDaysLeft(d)) : null })
       }

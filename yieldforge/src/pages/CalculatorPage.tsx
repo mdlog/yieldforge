@@ -6,7 +6,7 @@ import { useSeriesDisplay } from '@/hooks/useSeriesDisplay'
 import { useLiveListings } from '@/hooks/useLiveData'
 import { demoInputs, listings as demoListings } from '@/lib/demoData'
 import { isLiveMode } from '@/lib/near/wallet'
-import { isFillable } from '@/lib/contracts/marketplace'
+import { isBuyable } from '@/lib/contracts/marketplace'
 import { buildScenarioRows, DEPOSIT_FEE_BPS, formatBps, MARKET_FEE_BPS } from '@/utils/math'
 import { formatNear, formatYoctoInput, parseNear, toBigInt } from '@/utils/format'
 
@@ -39,7 +39,7 @@ export default function CalculatorPage() {
   // Lowest open ask in the market (exact yocto), used as the default sale price.
   const lowestAskYocto = useMemo<bigint | null>(() => {
     const asks = live
-      ? (listingsQuery.data ?? []).filter(isFillable).map((l) => toBigInt(l.unitPrice))
+      ? (listingsQuery.data ?? []).filter(isBuyable).map((l) => toBigInt(l.unitPrice))
       : demoListings.filter((l) => l.status === 'Open' || l.status === 'Partial').map((l) => parseNear(String(l.unitPrice)))
     const positive = asks.filter((a) => a > 0n)
     return positive.length ? positive.reduce((min, a) => (a < min ? a : min)) : null

@@ -96,6 +96,18 @@ export function listingExpiryOptions(nowMs: number, maturityMs: number | null | 
   return options
 }
 
+/**
+ * Whether a listing can still be filled at `nowMs`. The contract fills only while block time < expires_at
+ * (nanoseconds), yet keeps the listing OPEN until someone calls expire_listing, so status alone isn't enough.
+ */
+export function listingOpenAt(expiresAtNanos: string, nowMs: number): boolean {
+  try {
+    return BigInt(expiresAtNanos) > BigInt(Math.floor(nowMs)) * 1_000_000n
+  } catch {
+    return false
+  }
+}
+
 export function formatBps(bps: bigint): string {
   return `${(Number(bps) / 100).toFixed(2)}%`
 }

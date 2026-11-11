@@ -6,7 +6,7 @@ import { isLiveMode } from '@/lib/near/wallet'
 import { explorerAccountUrl } from '@/lib/near/config'
 import { useSeriesDisplay } from '@/hooks/useSeriesDisplay'
 import { useLiveListings } from '@/hooks/useLiveData'
-import { isFillable } from '@/lib/contracts/marketplace'
+import { isBuyable } from '@/lib/contracts/marketplace'
 import { formatNear, formatYoctoInput, shorten } from '@/utils/format'
 import { formatBps } from '@/utils/math'
 
@@ -22,7 +22,7 @@ export default function SeriesPage() {
   const live = isLiveMode()
   const { display: s, loading } = useSeriesDisplay()
   const listingsQuery = useLiveListings()
-  const openLive = (listingsQuery.data ?? []).filter(isFillable).length
+  const openLive = (listingsQuery.data ?? []).filter(isBuyable).length
   const pending = loading ? '…' : '—'
   const termDays = s?.maturityMs != null && s.cutoffMs != null ? Math.round((s.maturityMs - s.cutoffMs) / 86_400_000) : null
   const rateLabel = (value: number | null | undefined, missing: string) => (value != null ? value.toFixed(4) : loading ? '…' : missing)
