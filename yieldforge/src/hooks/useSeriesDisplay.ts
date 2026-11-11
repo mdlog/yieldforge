@@ -6,8 +6,9 @@ import { isLiveMode } from '@/lib/near/wallet'
 import { useLiveSeries, useStNearPrice } from '@/hooks/useLiveData'
 import { daysUntil, formatDate, formatDateTimeUtc, nanosToMs, parseNear, toBigInt, yoctoToNumber } from '@/utils/format'
 import { DEPOSIT_FEE_BPS, feeBpsFromTotals, MARKET_FEE_BPS, SERIES_MIN_DEPOSIT_YOCTO } from '@/utils/math'
+import { lifecycleOf, phaseOf, type SeriesPhase } from '@/utils/seriesPhase'
 
-export type SeriesPhase = 'Deposit open' | 'Awaiting baseline' | 'Active' | 'Matured' | 'Settled' | 'Paused'
+export type { SeriesPhase }
 
 /** Everything the pages show about the active series, from the chain (live) or the demo snapshot. */
 export interface SeriesDisplay {
@@ -16,7 +17,9 @@ export interface SeriesDisplay {
   contract: string
   underlying: string
   phase: SeriesPhase
+  /** False while paused: the contract refuses deposits then. */
   depositsOpen: boolean
+  /** From dates and stored rates; a pause doesn't change it (nor `settled`, `baselinePending`). */
   matured: boolean
   settled: boolean
   maturityMs: number | null
@@ -58,16 +61,6 @@ export interface SeriesDisplay {
 function rate(value: string | undefined): number | null {
   const n = yoctoToNumber(value, 8)
   return n > 0 ? n : null
-}
-
-function phaseOf(series: SeriesView, now: number): SeriesPhase {
-  const maturity = nanosToMs(series.maturityAt)
-  const cutoff = nanosToMs(series.depositsCloseAt)
-  if (series.paused || series.status === 'Paused') return 'Paused'
-  if (series.status === 'Settled' || series.settlementRate) return 'Settled'
-  if (maturity !== null && now >= maturity) return 'Matured'
-  if ((cutoff !== null && now >= cutoff) || series.status !== 'DepositOpen') return series.baselineRate ? 'Active' : 'Awaiting baseline'
-  return 'Deposit open'
 }
 
 const DEMO_TVL_YOCTO = parseNear(String(demoSeries.tvl))
@@ -117,9 +110,10 @@ function depositFee(series: SeriesView): { depositFeeBps: bigint; depositFeeSour
 
 /** Display model for one live series; `price` is Meta Pool's rate (yocto-scaled) or null when unavailable. */
 export function toSeriesDisplay(series: SeriesView, price: string | null, contractId: string, now = Date.now()): SeriesDisplay {
-  const phase = phaseOf(series, now)
   const maturityMs = nanosToMs(series.maturityAt)
   const cutoffMs = nanosToMs(series.depositsCloseAt)
+  const lifecycle = lifecycleOf({ ...series, maturityMs, cutoffMs }, now)
+  const phase = phaseOf(series, lifecycle)
   return {
     name: `stNEAR · ${series.seriesId || 'series'}`,
     id: series.seriesId || '—',
@@ -127,8 +121,8 @@ export function toSeriesDisplay(series: SeriesView, price: string | null, contra
     underlying: series.underlyingToken || '—',
     phase,
     depositsOpen: phase === 'Deposit open',
-    matured: phase === 'Matured' || phase === 'Settled',
-    settled: phase === 'Settled',
+    matured: lifecycle === 'Matured' || lifecycle === 'Settled',
+    settled: lifecycle === 'Settled',
     maturityMs,
     maturityLabel: formatDate(maturityMs),
     maturityExactLabel: formatDateTimeUtc(maturityMs),
@@ -143,7 +137,7 @@ export function toSeriesDisplay(series: SeriesView, price: string | null, contra
     tvl: yoctoToNumber(series.totalStNearDeposited, 2),
     rateSource: price ? `${getNearConfig().stNearContractId} · get_st_near_price` : 'Rate unavailable',
     rateUpdated: price ? 'Live · read just now' : 'Unavailable',
-    baselinePending: phase === 'Awaiting baseline',
+    baselinePending: lifecycle === 'Awaiting baseline',
     ...depositFee(series),
     marketFeeBps: series.marketFeeBps !== undefined ? BigInt(series.marketFeeBps) : MARKET_FEE_BPS,
     minDepositYocto: series.minDeposit ? toBigInt(series.minDeposit) : SERIES_MIN_DEPOSIT_YOCTO,
