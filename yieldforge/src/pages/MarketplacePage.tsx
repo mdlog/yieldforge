@@ -1,13 +1,14 @@
 import { useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ArrowRight, RefreshCcw } from 'lucide-react'
-import { Button, DemoBanner, InlineEmpty, Panel, TokenBadge } from '@/components/ui'
+import { Button, DemoBanner, FlatRateNote, InlineEmpty, Panel, TokenBadge } from '@/components/ui'
 import { listings as demoListings } from '@/lib/demoData'
 import { isLiveMode } from '@/lib/near/wallet'
 import { withSeries } from '@/contexts/SeriesContext'
 import { isFillable, toUiListing } from '@/lib/contracts/marketplace'
 import { bySchedule, tenorLabel, useAllSeries } from '@/hooks/useAllSeries'
 import type { SeriesDisplay } from '@/hooks/useSeriesDisplay'
+import { isRateFlat, useStakingApr } from '@/hooks/useStakingApr'
 import { breakEvenApr, MARKET_FEE_BPS } from '@/utils/math'
 import { formatDate, formatYocto } from '@/utils/format'
 import type { Listing } from '@/types'
@@ -36,6 +37,7 @@ export default function MarketplacePage() {
   const navigate = useNavigate()
   const live = isLiveMode()
   const all = useAllSeries()
+  const staking = useStakingApr()
 
   const offers = useMemo<Offer[] | null>(() => {
     if (!all.data) return null
@@ -69,6 +71,8 @@ export default function MarketplacePage() {
       </div>
 
       <DemoBanner />
+
+      {live && staking.app && isRateFlat(staking.app) && <FlatRateNote app={staking.app} reference={staking.reference} />}
 
       <Panel className="market-panel">
         {offers === null ? (
@@ -112,8 +116,9 @@ export default function MarketplacePage() {
                 <span role="cell" data-label="Price / YT">
                   {unitPrice(o.listing).toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 6 })} NEAR
                 </span>
-                <span role="cell" data-label="Break-even APR" className="market-be">
+                <span role="cell" data-label="Break-even APR" className={`market-be ${o.breakEven != null && o.breakEven < staking.aprPercent ? 'market-be-under' : ''}`}>
                   {o.breakEven != null ? `${o.breakEven.toFixed(1)}%` : '—'}
+                  {o.breakEven != null && <small>{o.breakEven < staking.aprPercent ? 'below' : 'above'} today’s {staking.aprPercent.toFixed(1)}%</small>}
                 </span>
                 <span role="cell" data-label="Ends">
                   {o.listing.expiry}
@@ -129,7 +134,8 @@ export default function MarketplacePage() {
         )}
         <div className="market-foot">
           <span>
-            <strong>Break-even APR</strong> is the stNEAR staking rate needed until maturity for a purchase to pay back, fee included. Lower is better.{' '}
+            <strong>Break-even APR</strong> is the stNEAR staking rate needed until maturity for a purchase to pay back, fee included. Lower is better.
+            Staking pays about <strong>{staking.aprPercent.toFixed(1)}%</strong> today ({staking.label}).{' '}
             <Link to="/docs#guide-buy">How buying works</Link>
           </span>
           {live && (

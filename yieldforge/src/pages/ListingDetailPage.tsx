@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowRight } from 'lucide-react'
-import { Button, CopyButton, DemoBanner, EmptyState, ExplorerLink, InfoLine, InlineEmpty, Panel, StatusPill, TokenBadge, TxFeedback } from '@/components/ui'
+import { Button, CopyButton, DemoBanner, EmptyState, ExplorerLink, FlatRateNote, InfoLine, InlineEmpty, Panel, StatusPill, TokenBadge, TxFeedback } from '@/components/ui'
 import { listings as demoListings } from '@/lib/demoData'
 import { useWallet } from '@/contexts/WalletContext'
 import { useToast } from '@/contexts/ToastContext'
@@ -13,6 +13,7 @@ import { useLiveListing } from '@/hooks/useLiveData'
 import { useNearQuery } from '@/hooks/useNearQuery'
 import { useSeriesDisplay } from '@/hooks/useSeriesDisplay'
 import { tenorLabel } from '@/hooks/useAllSeries'
+import { isRateFlat, useStakingApr } from '@/hooks/useStakingApr'
 import { useTx } from '@/hooks/useTx'
 import { breakEvenApr, buildScenarioRows, buyCost, formatBps, MARKET_FEE_BPS } from '@/utils/math'
 import { formatNear, formatYocto, formatYoctoInput, parseNear, toBigInt } from '@/utils/format'
@@ -40,6 +41,7 @@ export default function ListingDetailPage() {
   const tx = useTx()
   const { display: series } = useSeriesDisplay()
   const listingQuery = useLiveListing(id)
+  const staking = useStakingApr()
 
   const listing = useMemo<Listing | null>(() => {
     if (!live) return demoListings.find((l) => l.id === id) ?? null
@@ -151,6 +153,8 @@ export default function ListingDetailPage() {
 
       <DemoBanner />
 
+      {live && staking.app && isRateFlat(staking.app) && <FlatRateNote app={staking.app} reference={staking.reference} />}
+
       <div className="buy-layout">
         <Panel className="buy-card">
           <div className="buy-facts">
@@ -167,7 +171,9 @@ export default function ListingDetailPage() {
             <div>
               <span>Break-even APR</span>
               <strong>{breakEven != null ? `${breakEven.toFixed(1)}%` : '—'}</strong>
-              <small>staking APR needed until {series?.maturityLabel ?? 'maturity'}</small>
+              <small>
+                needed until {series?.maturityLabel ?? 'maturity'} · staking pays ≈ {staking.aprPercent.toFixed(1)}% today
+              </small>
             </div>
           </div>
 

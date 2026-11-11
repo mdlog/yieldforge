@@ -421,7 +421,7 @@ YT  →  max(RT − R0, 0) / RT   stNEAR   (worth RT − R0 NEAR)`}</code>
             <ol className="docs-steps">
               <li>
                 Step 3 of <Link to="/earn?step=sell">Deposit &amp; sell</Link> opens as soon as you hold YT (Portfolio has a <strong>Sell YT</strong> button per
-                series too). Choose the quantity and the price per YT in NEAR; <strong>Use</strong> fills in a fair price at a 7% staking APR.
+                series too). Choose the quantity and the price per YT in NEAR; <strong>Use</strong> fills in a fair price at today’s staking APR (Meta Pool’s 30-day stNEAR growth on mainnet, read from chain), and the page shows the APR you lock in at your price.
               </li>
               <li>
                 <em className="docs-app-rule">App behavior</em> The listing can stay open for 1, 3, 7, 14, 30, 45 or 60 days, or until maturity, and never longer
@@ -739,7 +739,8 @@ YT  →  max(RT − R0, 0) / RT   stNEAR   (worth RT − R0 NEAR)`}</code>
                 <strong>Burn before pay.</strong> Claims are burned before stNEAR leaves the contract and restored if the transfer fails.
               </li>
               <li>
-                <strong>Permissionless lifecycle.</strong> Anyone can capture the baseline and settle; the stored rates are immutable.
+                <strong>Permissionless lifecycle.</strong> Anyone can capture the baseline and settle; the stored rates are immutable. A keeper job checks every
+                series every 10 minutes and makes both calls when due, from its own low-balance account with no special rights.
               </li>
               <li>
                 <strong>One rate source.</strong> Rates come straight from Meta Pool’s <code>get_st_near_price</code>.

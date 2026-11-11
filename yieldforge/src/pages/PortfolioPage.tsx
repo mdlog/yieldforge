@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowRight, ArrowDownRight, ArrowUpRight, Wallet } from 'lucide-react'
-import { ActivityList, Button, DemoBanner, Eyebrow, InlineEmpty, Panel, RiskCallout, SectionHeading, StatusPill, TransactionRow, TxFeedback, TokenBadge } from '@/components/ui'
+import { ActivityList, Button, DemoBanner, Eyebrow, FlatRateNote, InlineEmpty, Panel, RiskCallout, SectionHeading, StatusPill, TransactionRow, TxFeedback, TokenBadge } from '@/components/ui'
 import { demoOwnedListingIds, listings as demoListings, positions, transactions } from '@/lib/demoData'
 import { useWallet } from '@/contexts/WalletContext'
 import { useSeries, withSeries } from '@/contexts/SeriesContext'
@@ -15,8 +15,20 @@ import { buildCancelListingTx, isFillable, toUiListing } from '@/lib/contracts/m
 import { useAccountActivity, useLiveListings, useLivePosition } from '@/hooks/useLiveData'
 import { useSeriesDisplay } from '@/hooks/useSeriesDisplay'
 import { tenorLabel, useAllPositions, useAllSeries } from '@/hooks/useAllSeries'
+import { isRateFlat, useStakingApr } from '@/hooks/useStakingApr'
+import type { SeriesDisplay } from '@/hooks/useSeriesDisplay'
 import { useTx } from '@/hooks/useTx'
 import { formatYocto, toBigInt } from '@/utils/format'
+import { projectPayout } from '@/utils/math'
+
+const DAY_MS = 86_400_000
+const near = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
+
+/** Days of yield still to accrue: from the cutoff (or now, if later) to maturity. */
+function accrualDaysLeft(d: SeriesDisplay): number {
+  if (!d.maturityMs) return 0
+  return Math.max(0, (d.maturityMs - Math.max(Date.now(), d.cutoffMs ?? 0)) / DAY_MS)
+}
 
 export default function PortfolioPage() {
   const navigate = useNavigate()
@@ -28,6 +40,11 @@ export default function PortfolioPage() {
   const { seriesIds, active, select } = useSeries()
   const allSeries = useAllSeries()
   const allPositions = useAllPositions(live && isConnected && seriesIds.length > 1 ? accountId : null)
+  // Projections use the rate this app's stNEAR actually grows at; mainnet's rate is shown alongside when that one is flat.
+  const staking = useStakingApr()
+  const accrualApr = staking.app?.aprPercent ?? staking.aprPercent
+  const accrualLabel = staking.app ? `${staking.app.contractId.includes('testnet') ? 'testnet' : 'this'} stNEAR, last ${Math.round(staking.app.days)} days` : staking.label
+  const appFlat = isRateFlat(staking.app)
   const listingsQuery = useLiveListings()
   const activity = useAccountActivity(isConnected ? accountId : null, 4)
   const redeemTx = useTx()
@@ -159,6 +176,7 @@ export default function PortfolioPage() {
       {live && isConnected && seriesIds.length > 1 && (
         <Panel className="all-positions-panel">
           <SectionHeading eyebrow="All series" title="Your positions" description="Each series pays out on its own date. Pick one to see its details below." />
+          {appFlat && staking.app && allPositions.data?.some((r) => toBigInt(r.position.ytBalance) > 0n) && <FlatRateNote app={staking.app} reference={staking.reference} />}
           {allPositions.loading && !allPositions.data ? (
             <InlineEmpty title="Reading your positions in every series…" />
           ) : !allPositions.data || allPositions.data.length === 0 ? (
@@ -168,6 +186,20 @@ export default function PortfolioPage() {
               {allPositions.data.map(({ contractId, position }) => {
                 const d = allSeries.data?.find((row) => row.contractId === contractId)?.display
                 const current = contractId === active
+                const projection = (aprPercent: number) =>
+                  d?.currentRate != null
+                    ? projectPayout({
+                        pt: Number(formatYocto(position.ptBalance, 8)),
+                        yt: Number(formatYocto(position.ytBalance, 8)),
+                        rateNow: d.currentRate,
+                        r0: d.baselineRate,
+                        rt: d.settlementRate,
+                        aprPercent,
+                        daysLeft: accrualDaysLeft(d),
+                      })
+                    : null
+                const est = projection(accrualApr)
+                const ifMainnet = appFlat && staking.reference && est && !est.settled && toBigInt(position.ytBalance) > 0n ? projection(staking.reference.aprPercent) : null
                 return (
                   <div key={contractId} className={`all-position ${current ? 'all-position-current' : ''}`}>
                     <div className="all-position-series">
@@ -183,6 +215,27 @@ export default function PortfolioPage() {
                       <span>
                         <TokenBadge kind="YT" size="sm" /> {formatYocto(position.ytBalance, 4)}
                       </span>
+                    </div>
+                    <div className="all-position-est">
+                      {est ? (
+                        <>
+                          <span>
+                            {est.settled ? 'Pays' : 'At maturity ≈'} <strong>{near(est.ptNear + est.ytNear)} NEAR</strong>
+                          </span>
+                          <small>
+                            PT {near(est.ptNear)} + YT {near(est.ytNear)}
+                            {est.settled ? ' · settled' : ` · at ${accrualApr.toFixed(1)}% (${accrualLabel})`}
+                          </small>
+                          {est.ytAccruedNear > 0 && !est.settled && <small>YT earned so far {near(est.ytAccruedNear)} NEAR</small>}
+                          {ifMainnet && staking.reference && (
+                            <small>
+                              If it grew like mainnet ({staking.reference.aprPercent.toFixed(1)}%): YT ≈ {near(ifMainnet.ytNear)} NEAR
+                            </small>
+                          )}
+                        </>
+                      ) : (
+                        <small>Projection unavailable</small>
+                      )}
                     </div>
                     <div className="all-position-actions">
                       {toBigInt(position.ytBalance) > 0n && d && !d.matured && (

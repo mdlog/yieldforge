@@ -15,13 +15,12 @@ import { useTx } from '@/hooks/useTx'
 import { useLivePosition, useNearBalance, useStNearBalance } from '@/hooks/useLiveData'
 import { useSeriesDisplay } from '@/hooks/useSeriesDisplay'
 import { bySchedule, tenorLabel, useAllSeries } from '@/hooks/useAllSeries'
-import { DEPOSIT_FEE_BPS, MARKET_FEE_BPS, buyCost, fairYtPrice, formatBps, listingExpiryOptions, previewDeposit } from '@/utils/math'
+import { useStakingApr } from '@/hooks/useStakingApr'
+import { DEPOSIT_FEE_BPS, MARKET_FEE_BPS, buyCost, fairYtPrice, formatBps, listingExpiryOptions, lockedApr, previewDeposit } from '@/utils/math'
 import { formatDate, formatYocto, formatYoctoInput, msToNanos, parseNear, toBigInt } from '@/utils/format'
 
 type StepId = 'stake' | 'deposit' | 'sell'
 
-/** The staking APR the suggested YT price assumes. Shown next to the suggestion. */
-const ASSUMED_APR = 7
 const DAY_MS = 86_400_000
 /** NEAR kept back from "Max" so the wallet can still pay gas and storage. */
 const GAS_RESERVE_YOCTO = parseNear('0.1')
@@ -58,6 +57,7 @@ export default function EarnPage() {
   const { active, select } = useSeries()
   const { display: series } = useSeriesDisplay()
   const all = useAllSeries()
+  const staking = useStakingApr()
   const nearQuery = useNearBalance(isConnected ? accountId : null)
   const stNearQuery = useStNearBalance(isConnected ? accountId : null)
   const positionQuery = useLivePosition(isConnected ? accountId : null)
@@ -166,7 +166,9 @@ export default function EarnPage() {
   const [now] = useState(() => Date.now())
   const qtyYocto = toYocto(quantity)
   const priceYocto = toYocto(price)
-  const suggested = r0 != null ? fairYtPrice(r0, ASSUMED_APR, yieldDays) : null
+  const suggested = r0 != null ? fairYtPrice(r0, staking.aprPercent, yieldDays) : null
+  // The APR the seller fixes by selling at this price, next to what staking pays today.
+  const locked = priceYocto !== null && r0 != null ? lockedApr(Number(formatYocto(priceYocto, 8)), r0, yieldDays) : null
   const proceeds = buyCost(qtyYocto ?? 0n, priceYocto ?? 0n, series?.marketFeeBps ?? MARKET_FEE_BPS).cost
   const expiries = useMemo(() => listingExpiryOptions(now, series?.maturityMs), [now, series?.maturityMs])
   const expiry = expiries.find((o) => o.key === expiryKey) ?? expiries.find((o) => o.key === '7') ?? expiries.at(-1) ?? null
@@ -364,7 +366,7 @@ export default function EarnPage() {
                   hint={
                     suggested != null ? (
                       <>
-                        Fair value ≈ {suggested.toFixed(4)} at {ASSUMED_APR}% APR{' '}
+                        Fair value ≈ {suggested.toFixed(4)} at {staking.aprPercent.toFixed(1)}% ({staking.label}){' '}
                         <button type="button" className="earn-inline" onClick={() => setPrice(suggested.toFixed(4))}>
                           Use
                         </button>
@@ -389,6 +391,12 @@ export default function EarnPage() {
                 <span>
                   You receive <strong>{formatYocto(proceeds, 4)} NEAR</strong> when it’s fully bought
                 </span>
+                {locked != null && (
+                  <span className="earn-lock">
+                    That locks in <strong>{locked.toFixed(2)}% APR</strong>, fixed, until {series?.maturityLabel ?? 'maturity'} · staking pays about{' '}
+                    {staking.aprPercent.toFixed(1)}% today, variable ({staking.label})
+                  </span>
+                )}
                 <small>Buyers pay the {formatBps(series?.marketFeeBps ?? MARKET_FEE_BPS)} market fee · partial buys are paid as they happen</small>
               </p>
               <TxFeedback

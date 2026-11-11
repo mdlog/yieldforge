@@ -28,6 +28,7 @@ import { demoSeries, listings as demoListings } from '@/lib/demoData'
 import { withSeries } from '@/contexts/SeriesContext'
 import { bySchedule, tenorLabel, useAllSeries, type SeriesSnapshot } from '@/hooks/useAllSeries'
 import type { SeriesDisplay, SeriesPhase } from '@/hooks/useSeriesDisplay'
+import { useStakingApr } from '@/hooks/useStakingApr'
 import { formatYocto, yoctoToNumber } from '@/utils/format'
 import { filledVolumeYocto, formatBps, MARKET_FEE_BPS } from '@/utils/math'
 import '@/styles/landing.css'
@@ -586,7 +587,10 @@ function Simulator({ rows, featuredId }: { rows: SeriesSnapshot[]; featuredId: s
 
 function SimulatorBody({ r0, baselineCaptured, series }: { r0: number | null; baselineCaptured: boolean; series: SeriesDisplay | null }) {
   const [deposit, setDeposit] = useState('100')
-  const [apr, setApr] = useState(7)
+  // Starts at today's staking APR (read from chain) until the visitor moves the slider.
+  const staking = useStakingApr()
+  const [aprPicked, setApr] = useState<number | null>(null)
+  const apr = aprPicked ?? Math.round(staking.aprPercent * 10) / 10
   const [price, setPrice] = useState('')
 
   const termDays = useMemo(() => {
@@ -649,7 +653,15 @@ function SimulatorBody({ r0, baselineCaptured, series }: { r0: number | null; ba
           <span>
             Expected staking APR <b>{fixed(apr, 1)}%</b>
           </span>
-          <input className="lp-range" type="range" min={0} max={20} step={0.5} value={apr} onChange={(e) => setApr(Number(e.target.value))} aria-label="Expected staking APR" />
+          <input className="lp-range" type="range" min={0} max={20} step={0.1} value={apr} onChange={(e) => setApr(Number(e.target.value))} aria-label="Expected staking APR" />
+          <small>
+            Today ≈ {fixed(staking.aprPercent, 1)}% ({staking.label})
+            {aprPicked != null && (
+              <button type="button" onClick={() => setApr(null)}>
+                Use today’s
+              </button>
+            )}
+          </small>
         </label>
         <label className="lp-field">
           <span>YT price</span>

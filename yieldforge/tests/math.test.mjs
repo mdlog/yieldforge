@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { breakEvenApr, buildScenarioRows, fairYtPrice, feeBpsFromTotals, filledVolumeYocto, listingExpiryOptions, previewDeposit, previewRedemption } from '../src/utils/math.ts';
+import { breakEvenApr, buildScenarioRows, fairYtPrice, feeBpsFromTotals, filledVolumeYocto, listingExpiryOptions, lockedApr, previewDeposit, previewRedemption, projectPayout } from '../src/utils/math.ts';
 import { formatYoctoInput } from '../src/utils/format.ts';
 
 describe('redemption preview', () => {
@@ -118,5 +118,39 @@ describe('YT pricing helpers', () => {
     const apr = breakEvenApr(0.0043, 25n, 3.198752, 7);
     assert.ok(apr !== null && Math.abs(apr - 7.027) < 0.01);
     assert.equal(breakEvenApr(0.0043, 25n, 3.2, 0), null);
+  });
+});
+
+describe('seller and holder views', () => {
+  it('turns a YT price into the APR the seller locks in (fair price round-trips)', () => {
+    const price = fairYtPrice(3.2, 4, 30);
+    assert.ok(Math.abs(lockedApr(price, 3.2, 30) - 4) < 1e-9);
+    assert.equal(lockedApr(0.01, 3.2, 0), null);
+    // The buyer needs a little more than the seller locks in: the market fee.
+    assert.ok(breakEvenApr(price, 25n, 3.2, 30) > lockedApr(price, 3.2, 30));
+  });
+
+  it('projects PT and YT from the current rate before settlement', () => {
+    const p = projectPayout({ pt: 10, yt: 10, rateNow: 3.2, r0: 3.2, rt: null, aprPercent: 3.65, daysLeft: 100 });
+    assert.equal(p.settled, false);
+    assert.ok(Math.abs(p.ptNear - 32) < 1e-9);
+    assert.ok(Math.abs(p.ytNear - 10 * 3.2 * 0.01) < 1e-9);
+    assert.equal(p.ytAccruedNear, 0);
+  });
+
+  it('uses the recorded rates once settled, and YT gets nothing when the rate fell', () => {
+    const up = projectPayout({ pt: 1, yt: 2, rateNow: 3.5, r0: 3.2, rt: 3.3, aprPercent: 50, daysLeft: 0 });
+    assert.equal(up.settled, true);
+    assert.ok(Math.abs(up.ytNear - 0.2) < 1e-9);
+    assert.ok(Math.abs(up.ytAccruedNear - 0.2) < 1e-9);
+    const down = projectPayout({ pt: 1, yt: 1, rateNow: 3.1, r0: 3.2, rt: 3.1, aprPercent: 4, daysLeft: 0 });
+    assert.equal(down.ytNear, 0);
+    assert.ok(Math.abs(down.ptNear - 3.1) < 1e-9);
+  });
+
+  it('counts no accrued yield before R0 is captured', () => {
+    const p = projectPayout({ pt: 0, yt: 5, rateNow: 3.2, r0: null, rt: null, aprPercent: 4, daysLeft: 30 });
+    assert.equal(p.ytAccruedNear, 0);
+    assert.ok(p.ytNear > 0);
   });
 });

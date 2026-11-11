@@ -28,6 +28,50 @@ export function breakEvenApr(priceNear: number, feeBps: bigint, r0: number, days
   return ((priceNear * (1 + Number(feeBps) / 10_000)) / r0) * (365 / days) * 100
 }
 
+/**
+ * APR a YT seller locks in: the price is paid now for yield that would accrue over `days` on a principal
+ * worth R0 NEAR per YT, so selling at `priceNear` fixes R0 × APR × days / 365 = price. Buyers pay the
+ * market fee on top, so this equals the buyer's break-even APR without the fee.
+ */
+export function lockedApr(priceNear: number, r0: number, days: number): number | null {
+  return breakEvenApr(priceNear, 0n, r0, days)
+}
+
+export interface PayoutProjection {
+  /** NEAR value of the PT at maturity. */
+  ptNear: number
+  /** NEAR value of the YT at maturity. */
+  ytNear: number
+  /** NEAR the YT has earned so far (0 until R0 is captured). */
+  ytAccruedNear: number
+  /** True once RT is recorded, so the numbers are exact rather than projected. */
+  settled: boolean
+}
+
+/**
+ * What a position pays at maturity, in NEAR at RT: PT is worth min(R0, RT) and YT max(RT − R0, 0) per
+ * unit (both are paid in stNEAR at RT). Before settlement RT is projected from today's rate at `aprPercent`
+ * over the days of accrual left; before R0 is captured, today's rate stands in for it.
+ */
+export function projectPayout(p: {
+  pt: number
+  yt: number
+  rateNow: number
+  r0: number | null
+  rt: number | null
+  aprPercent: number
+  daysLeft: number
+}): PayoutProjection {
+  const r0 = p.r0 ?? p.rateNow
+  const rt = p.rt ?? p.rateNow * (1 + (p.aprPercent / 100) * (Math.max(0, p.daysLeft) / 365))
+  return {
+    ptNear: p.pt * Math.min(r0, rt),
+    ytNear: p.yt * Math.max(rt - r0, 0),
+    ytAccruedNear: p.r0 == null ? 0 : p.yt * Math.max((p.rt ?? p.rateNow) - p.r0, 0),
+    settled: p.rt != null,
+  }
+}
+
 /** Listing expiry presets offered by the UI, in days from now. */
 export const LISTING_EXPIRY_PRESET_DAYS = [1, 3, 7, 14, 30, 45, 60] as const
 
