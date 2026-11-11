@@ -153,7 +153,8 @@ Or browse the accounts on [NearBlocks testnet](https://testnet.nearblocks.io/add
 **Operations (Node scripts)**
 - `deploy-series.mjs`: create a sub-account, deploy and initialize a series in one atomic transaction
 - `roll-series.mjs`: deploy the next series of a tenor and add it to the app configuration
-- `keeper.mjs`: one pass that captures R0 and requests settlement for every due series (safe to schedule)
+- `keeper.mjs`: one pass that captures R0 and requests settlement for every due series; runs every 10 minutes as a Railway
+  cron job with its own low-balance account (`create-keeper.mjs`)
 
 ## How NEAR is used
 
@@ -191,10 +192,11 @@ Underlying: Meta Pool stNEAR, [`meta-v2.pool.testnet`](https://testnet.nearblock
 │   ├── src/lib/                # NEAR config, rate-limited RPC client, transaction builders
 │   ├── tests/                  # Unit tests (node --test)
 │   ├── server.mjs              # Dependency-free production server (static files + SPA fallback)
+│   ├── keeper.mjs              # Keeper (Railway cron): capture_baseline / request_settlement when due
 │   └── .env.testnet            # Public testnet config (contract ids, RPC) for dev and build; no secrets
 ├── contracts/
 │   └── series/src/lib.rs       # Series contract: vault + YT (NEP-141) + PT ledger + YT market
-├── scripts/                    # deploy-series, roll-series, keeper, e2e-testnet (testnet operations)
+├── scripts/                    # deploy-series, roll-series, create-keeper, keeper, e2e-testnet (testnet operations)
 ├── ARCHITECTURE.md             # Technical design
 └── PRD.md                      # Product requirements
 ```
@@ -251,7 +253,12 @@ node scripts/deploy-series.mjs --account stnear-7d-03 --series-id stnear-7d-03 \
   --close 2026-11-27T00:00:00Z --maturity 2026-12-04T00:00:00Z --fee-bps 2
 node scripts/roll-series.mjs --tenor 7 --dry-run   # plan the next series of a tenor; drop --dry-run to deploy it
 node scripts/keeper.mjs --dry-run                  # capture_baseline / request_settlement where due
+node scripts/create-keeper.mjs                     # one-time: low-balance keeper account, key saved to yieldforge/.env
 ```
+
+The hosted keeper is a second Railway service on the same repo: a cron job (every 10 minutes) running `npm run keeper`
+with `KEEPER_ACCOUNT` / `KEEPER_PRIVATE_KEY` set to that keeper account. Both calls are permissionless, so it needs no role
+on the contracts and the deploy key never leaves the deployer's machine.
 
 ## Configuration
 
