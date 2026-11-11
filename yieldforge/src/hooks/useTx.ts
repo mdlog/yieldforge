@@ -1,7 +1,10 @@
 import { useCallback, useRef, useState } from 'react'
 import { useWallet } from '@/contexts/WalletContext'
 import { explorerTxUrl } from '@/lib/near/config'
-import { awaitTxFinality, extractTxHash, friendlyTxError, stringifyError, type TxPhase, type TxRequest } from '@/lib/near/tx'
+import { awaitTxFinality, extractTxHash, friendlyTxError, stringifyError, type TxOutcome, type TxPhase, type TxRequest } from '@/lib/near/tx'
+
+/** Reads a successful outcome and returns why it still didn't do its job, or null when it did. */
+export type OutcomeCheck = (outcome: TxOutcome) => string | null
 
 const DEMO_CONFIRM_MS = 1100
 
@@ -10,8 +13,11 @@ export interface UseTxReturn {
   hash: string | null
   explorerUrl: string | null
   error: string | null
-  /** Sign and send for real; resolves to the tx hash once the wallet returns one. */
-  execute: (request: TxRequest) => Promise<string | null>
+  /**
+   * Sign and send for real; resolves to the tx hash once the wallet returns one. `check` turns a transaction that
+   * succeeded on chain but did not do its job (e.g. a refunded ft_transfer_call) into a failure.
+   */
+  execute: (request: TxRequest, check?: OutcomeCheck) => Promise<string | null>
   /** Demo mode: walk the same phases without a wallet. Resolves true when "confirmed". */
   simulate: () => Promise<boolean>
   /** Mark the current attempt as failed (used by the demo "Simulate rejected signature" control). */
@@ -60,7 +66,7 @@ export function useTx(): UseTxReturn {
   }, [])
 
   const execute = useCallback(
-    async (request: TxRequest): Promise<string | null> => {
+    async (request: TxRequest, check?: OutcomeCheck): Promise<string | null> => {
       const run = begin()
       try {
         const outcome = await signAndSendTransaction(request)
@@ -78,6 +84,12 @@ export function useTx(): UseTxReturn {
             .then((result) => {
               if (runId.current !== run) return
               if (result.status === 'success') {
+                const problem = check?.(result.outcome) ?? null
+                if (problem) {
+                  setError(problem)
+                  setPhase('failed')
+                  return
+                }
                 setPhase('confirmed')
                 window.setTimeout(() => setPhase((p) => (p === 'confirmed' ? 'indexing' : p)), 1200)
               } else if (result.status === 'failure') {

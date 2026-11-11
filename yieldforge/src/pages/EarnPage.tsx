@@ -11,7 +11,8 @@ import { isLiveMode } from '@/lib/near/wallet'
 import { buildDepositTx, buildStakeAndDepositTx } from '@/lib/contracts/series'
 import { buildStakeTx, getStNearPrice, MIN_STAKE_YOCTO } from '@/lib/contracts/metapool'
 import { buildCreateListingTx } from '@/lib/contracts/marketplace'
-import { useTx } from '@/hooks/useTx'
+import { ftTransferCallUsed, panicMessage } from '@/lib/near/outcome'
+import { useTx, type OutcomeCheck } from '@/hooks/useTx'
 import { useLivePosition, useNearBalance, useStNearBalance, useStNearPrice } from '@/hooks/useLiveData'
 import { useSeriesDisplay } from '@/hooks/useSeriesDisplay'
 import { bySchedule, tenorLabel, useAllSeries } from '@/hooks/useAllSeries'
@@ -107,6 +108,12 @@ export default function EarnPage() {
     setPicked('sell')
   }, [depositTx.phase, zapTx.phase, refreshNear, refreshStNear, refreshPosition])
   useEffect(() => {
+    // A refused deposit still moved funds: the stake went through, or the refunded stNEAR is back.
+    if (depositTx.phase !== 'failed' && zapTx.phase !== 'failed') return
+    refreshNear()
+    refreshStNear()
+  }, [depositTx.phase, zapTx.phase, refreshNear, refreshStNear])
+  useEffect(() => {
     if (listTx.phase === 'confirmed') refreshPosition()
   }, [listTx.phase, refreshPosition])
 
@@ -149,6 +156,16 @@ export default function EarnPage() {
   const feeBps = series?.depositFeeBps ?? DEPOSIT_FEE_BPS
   const preview = previewDeposit(depositYocto ?? 0n, feeBps)
 
+  // ft_transfer_call succeeds even when the series refuses the stNEAR: the stNEAR contract refunds it and the
+  // transaction returns "0". Without this check that would read as a confirmed deposit.
+  const refusedDeposit =
+    (kept: string): OutcomeCheck =>
+    ({ value, receiptErrors }) => {
+      if (ftTransferCallUsed(value) !== 0n) return null
+      const reason = receiptErrors.map(panicMessage).find(Boolean)
+      return `The series refused the deposit${reason ? ` (“${reason}”)` : ''}, so ${kept}.`
+    }
+
   // ---- Step 1 + 2 in one transaction ---------------------------------------------------------
   const canZap = series?.depositsOpen === true
   const [zap, setZap] = useState(true)
@@ -171,7 +188,10 @@ export default function EarnPage() {
     if (!fresh) return push('Could not read the stNEAR price. Try again.')
     const amount = zapDepositYocto(stakeMintYocto(stakeYocto, fresh))
     if (amount < minDeposit) return push(`That stakes too little to deposit; the minimum deposit is ${formatYoctoInput(minDeposit)} stNEAR.`)
-    const hash = await zapTx.execute(buildStakeAndDepositTx({ nearYocto: stakeYocto.toString(), depositYocto: amount.toString() }))
+    const hash = await zapTx.execute(
+      buildStakeAndDepositTx({ nearYocto: stakeYocto.toString(), depositYocto: amount.toString() }),
+      refusedDeposit('your NEAR was staked and the new stNEAR is in your wallet'),
+    )
     if (hash) push('Sent. PT and YT arrive once it confirms.', 'success')
   }
   const deposit = async () => {
@@ -185,7 +205,8 @@ export default function EarnPage() {
       if (await depositTx.simulate()) push('Demo deposit confirmed.', 'success')
       return
     }
-    if (await depositTx.execute(buildDepositTx({ amountYocto: depositYocto.toString() }))) push('Deposit sent. PT and YT arrive once it confirms.', 'success')
+    const hash = await depositTx.execute(buildDepositTx({ amountYocto: depositYocto.toString() }), refusedDeposit('the stNEAR came back to your wallet'))
+    if (hash) push('Deposit sent. PT and YT arrive once it confirms.', 'success')
   }
 
   // ---- Step 3: sell YT ---------------------------------------------------------------------
@@ -297,8 +318,8 @@ export default function EarnPage() {
             <label className="earn-check earn-zap">
               <input type="checkbox" checked={zap} onChange={(e) => setZap(e.target.checked)} disabled={stakeTx.phase !== 'idle' || zapTx.phase !== 'idle'} />
               <span>
-                <strong>Also deposit it into {seriesName}</strong> — stake and deposit in one transaction, one signature. If the deposit fails, the stake is
-                undone too.
+                <strong>Also deposit it into {seriesName}</strong> — stake and deposit in one transaction, one signature. If the transaction fails, nothing is
+                staked; if the series refuses the deposit, the new stNEAR stays in your wallet.
               </span>
             </label>
           )}

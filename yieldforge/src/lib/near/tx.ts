@@ -1,5 +1,6 @@
 import { viewCall } from '@/lib/near/wallet'
 import { getNearConfig } from '@/lib/near/config'
+import { decodeSuccessValue } from '@/lib/near/outcome'
 
 export type TxPhase = 'idle' | 'awaiting_signature' | 'submitted' | 'confirmed' | 'failed' | 'indexing'
 
@@ -63,8 +64,16 @@ export function extractTxHash(outcome: unknown): string | null {
   return null
 }
 
+/** What a successful transaction returned, for calls whose success alone doesn't say what happened. */
+export interface TxOutcome {
+  /** The final return value, decoded (JSON text for most methods); null when the RPC didn't report one. */
+  value: string | null
+  /** Receipts that failed although the transaction as a whole succeeded, e.g. a refused ft_on_transfer. */
+  receiptErrors: string[]
+}
+
 export type TxFinality =
-  | { status: 'success' }
+  | { status: 'success'; outcome: TxOutcome }
   | { status: 'failure'; error: string }
   | { status: 'pending'; error: string }
 
@@ -101,23 +110,34 @@ export async function awaitTxFinality(params: {
         }),
       })
       const json = (await response.json()) as {
-        result?: { status?: { SuccessValue?: unknown; Failure?: unknown }; final_execution_status?: string }
+        result?: {
+          status?: { SuccessValue?: unknown; Failure?: unknown }
+          receipts_outcome?: Array<{ outcome?: { status?: { Failure?: unknown } } }>
+          final_execution_status?: string
+        }
         error?: unknown
       }
       if (json.error) throw new Error(typeof json.error === 'string' ? json.error : JSON.stringify(json.error))
 
       const result = json.result
       const status = result?.status
+      const receiptErrors = (result?.receipts_outcome ?? []).flatMap((r) => {
+        const s = r.outcome?.status
+        if (!s || typeof s !== 'object' || !Object.prototype.hasOwnProperty.call(s, 'Failure')) return []
+        return [typeof s.Failure === 'string' ? s.Failure : JSON.stringify(s.Failure)]
+      })
       if (status && typeof status === 'object') {
         if (Object.prototype.hasOwnProperty.call(status, 'Failure')) {
           const failure = (status as { Failure?: unknown }).Failure
           return { status: 'failure', error: typeof failure === 'string' ? failure : JSON.stringify(failure) }
         }
-        if (Object.prototype.hasOwnProperty.call(status, 'SuccessValue')) return { status: 'success' }
+        if (Object.prototype.hasOwnProperty.call(status, 'SuccessValue')) {
+          return { status: 'success', outcome: { value: decodeSuccessValue(status.SuccessValue), receiptErrors } }
+        }
       }
       // Some RPC providers omit `status` but report an executed/final outcome.
       if (result?.final_execution_status === 'EXECUTED' || result?.final_execution_status === 'FINAL') {
-        return { status: 'success' }
+        return { status: 'success', outcome: { value: null, receiptErrors } }
       }
     } catch (error: unknown) {
       lastError = error instanceof Error ? error.message : String(error)
