@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ComponentType, type CSSProperties, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
   Anchor,
@@ -17,10 +17,12 @@ import {
   Plus,
   Scale,
   Split,
+  TrendingUp,
   TriangleAlert,
 } from 'lucide-react'
-import { TokenBadge } from '@/components/ui'
+import { NearMark, TokenBadge } from '@/components/ui'
 import { LandingFooter, LandingNav } from '@/components/landing/LandingChrome'
+import { CountUp, ForgeDiagram, HeroBackdrop, prefersReducedMotion, TiltStage } from '@/components/landing/HeroVisual'
 import { isLiveMode } from '@/lib/near/wallet'
 import { explorerAccountUrl, getNearConfig } from '@/lib/near/config'
 import { isFillable } from '@/lib/contracts/marketplace'
@@ -36,6 +38,8 @@ import '@/styles/landing.css'
 type Icon = ComponentType<{ size?: number; strokeWidth?: number; 'aria-hidden'?: boolean }>
 
 const DAY_MS = 86_400_000
+/** How long the hero card shows one series before moving to the next. */
+const ROTATE_MS = 6000
 
 function fixed(n: number | null | undefined, digits: number): string {
   if (n == null || !Number.isFinite(n)) return '—'
@@ -88,7 +92,6 @@ export default function LandingPage() {
   const all = useAllSeries()
   const rows = useMemo(() => [...(all.data ?? [])].sort(bySchedule), [all.data])
   const featured = useMemo(() => pickFeatured(rows), [rows])
-  const series = featured?.display ?? null
   const loading = all.loading && !all.data
 
   useEffect(() => {
@@ -96,7 +99,28 @@ export default function LandingPage() {
   }, [hash])
 
   const pending = live && loading ? '…' : '—'
+  const staking = useStakingApr()
+
+  // The hero card cycles through the series every few seconds until the visitor picks one or hovers it.
+  const featuredIdx = Math.max(0, rows.findIndex((r) => r.contractId === featured?.contractId))
+  const [pickedIdx, setPickedIdx] = useState<number | null>(null)
+  const [pinned, setPinned] = useState(false)
+  const [hovering, setHovering] = useState(false)
+  const [tick, setTick] = useState(0)
+  const shownIdx = rows.length ? (pickedIdx ?? featuredIdx) % rows.length : 0
+  const autoplay = rows.length > 1 && !pinned && !hovering && !prefersReducedMotion()
+  useEffect(() => {
+    if (!autoplay) return
+    const id = window.setTimeout(() => {
+      setPickedIdx((i) => ((i ?? featuredIdx) + 1) % rows.length)
+      setTick((t) => t + 1)
+    }, ROTATE_MS)
+    return () => window.clearTimeout(id)
+  }, [autoplay, shownIdx, featuredIdx, rows.length])
+  const shown = rows[shownIdx] ?? featured
+  const series = shown?.display ?? null
   const rate = series?.currentRate ?? null
+  const mintEach = series ? fixed(1 - Number(series.depositFeeBps) / 10_000, 4) : '—'
   const marketFee = formatBps(rows[0]?.display.marketFeeBps ?? MARKET_FEE_BPS)
   // Deposit fees are sized to each tenor (about 1% a year), so they are quoted per series.
   const depositFees = rows.length ? rows.map((r) => `${formatBps(r.display.depositFeeBps)} (${tenorLabel(r.display)})`).join(', ') : '—'
@@ -137,105 +161,199 @@ export default function LandingPage() {
 
   const tvl = backing ? yoctoToNumber(backing.held, 6) : null
   const tvlNear = tvl != null && rate != null ? tvl * rate : null
-  const featuredHeld = featured?.heldYocto != null ? yoctoToNumber(featured.heldYocto, 6) : null
-  const featuredFee = series ? formatBps(series.depositFeeBps) : '—'
+  const shownHeld = shown?.heldYocto != null ? yoctoToNumber(shown.heldYocto, 6) : null
+  const shownFee = series ? formatBps(series.depositFeeBps) : '—'
+
+  // The two paths, priced on the series with the most yield left to accrue, at today's staking APR.
+  const terms = useMemo(() => {
+    const now = Date.now()
+    const best = rows
+      .filter((r) => !r.display.matured && r.display.maturityMs != null && r.display.currentRate != null)
+      .map((r) => ({ d: r.display, days: Math.max(0, (r.display.maturityMs! - Math.max(now, r.display.cutoffMs ?? 0)) / DAY_MS) }))
+      .sort((a, b) => b.days - a.days)[0]
+    if (!best || best.days <= 0) return null
+    const r0 = best.d.baselineRate ?? best.d.currentRate!
+    const fee = Number(best.d.depositFeeBps) / 10_000
+    const fair = r0 * (staking.aprPercent / 100) * (best.days / 365)
+    return {
+      tenor: tenorLabel(best.d),
+      // Deposit 1 stNEAR, sell the YT at the fair price, keep the PT: the fixed return, annualized.
+      fixedApr: ((1 - fee) * (1 + fair / r0) - 1) * (365 / best.days) * 100,
+      upfront: 100 * (1 - fee) * fair,
+      exposure: fair > 0 ? r0 / fair : null,
+    }
+  }, [rows, staking.aprPercent])
 
   return (
     <div className="lp">
       <LandingNav page="home" />
 
       <header className="lp-hero">
+        <HeroBackdrop />
         <div className="lp-wrap lp-hero-grid">
           <div className="lp-hero-copy">
-            <span className="lp-kicker">
-              <span className="lp-pulse" aria-hidden /> Yield tokenization for NEAR staking
+            <span className="lp-kicker lp-rise">
+              <span className="lp-pulse" aria-hidden /> {live ? `Live on NEAR ${cfg.network}` : 'Demo mode'} · {all.data ? `${rows.length} series` : 'series'} · Meta Pool stNEAR
             </span>
-            <h1>
-              Tomorrow’s staking yield, <em>tradable today.</em>
+            <h1 className="lp-rise" style={{ '--d': '.08s' } as CSSProperties}>
+              Tomorrow’s staking yield, <em className="lp-shine">tradable today.</em>
             </h1>
-            <p className="lp-lede">
-              YieldForge splits Meta Pool stNEAR into a Principal Token and a Yield Token. Sell your yield up front for a fixed return, or buy it for
-              leveraged exposure to NEAR staking rewards. The contract computes and pays every claim.
+            <p className="lp-lede lp-rise" style={{ '--d': '.16s' } as CSSProperties}>
+              YieldForge splits Meta Pool stNEAR into a Principal Token and a Yield Token. Sell the yield to lock a fixed rate today, or buy it to earn
+              the staking rewards on far more stake than you pay for.
             </p>
-            <div className="lp-hero-actions">
+
+            <div className="lp-paths lp-rise" style={{ '--d': '.24s' } as CSSProperties}>
+              <Link className="lp-path" to="/earn">
+                <span className="lp-path-top">
+                  <Anchor size={13} aria-hidden /> Fixed rate · sell YT
+                </span>
+                <strong>
+                  {terms ? (
+                    <>
+                      <CountUp value={terms.fixedApr} digits={1} />%
+                    </>
+                  ) : (
+                    pending
+                  )}
+                  <em>APR</em>
+                </strong>
+                <small>{terms ? `≈ ${fixed(terms.upfront, 2)} NEAR paid upfront per 100 stNEAR · ${terms.tenor}, after fees` : 'Paid upfront, after fees'}</small>
+                <span className="lp-path-cta">
+                  Deposit &amp; sell <ArrowRight size={13} aria-hidden />
+                </span>
+              </Link>
+              <Link className="lp-path lp-path-long" to="/marketplace">
+                <span className="lp-path-top">
+                  <TrendingUp size={13} aria-hidden /> Long yield · buy YT
+                </span>
+                <strong>
+                  {terms?.exposure != null ? (
+                    <>
+                      <CountUp value={terms.exposure} digits={0} />×
+                    </>
+                  ) : (
+                    pending
+                  )}
+                  <em>exposure</em>
+                </strong>
+                <small>
+                  {terms?.exposure != null
+                    ? `Staking yield on ~${fixed(terms.exposure, 0)} NEAR of stake per NEAR paid · ${terms.tenor}, at fair price`
+                    : 'Staking yield on far more stake than you pay for'}
+                </small>
+                <span className="lp-path-cta">
+                  Buy YT <ArrowRight size={13} aria-hidden />
+                </span>
+              </Link>
+            </div>
+
+            <div className="lp-hero-actions lp-rise" style={{ '--d': '.32s' } as CSSProperties}>
               <Link className="lp-btn lp-btn-acid" to="/marketplace">
                 Launch app <ArrowRight size={16} aria-hidden />
-              </Link>
-              <Link className="lp-btn lp-btn-ghost" to="/earn">
-                Deposit stNEAR
               </Link>
               <a className="lp-text-link" href="#how">
                 How it works <ArrowRight size={13} aria-hidden />
               </a>
             </div>
-            <ul className="lp-hero-trust">
-              <TrustItem icon={KeyRound} title="Non-custodial" body="You sign every transaction in your own wallet." />
-              <TrustItem icon={Scale} title="Fully backed" body="Each PT + YT pair redeems for exactly 1 stNEAR." />
-              <TrustItem icon={Globe} title="Permissionless" body="Anyone can record the baseline and settle the series." />
+            <ul className="lp-hero-chips lp-rise" style={{ '--d': '.4s' } as CSSProperties}>
+              <li title="You sign every transaction in your own wallet.">
+                <KeyRound size={13} aria-hidden /> Non-custodial
+              </li>
+              <li title="Each PT + YT pair redeems for exactly 1 stNEAR.">
+                <Scale size={13} aria-hidden /> Fully backed
+              </li>
+              <li title="Anyone can record the baseline and settle the series.">
+                <Globe size={13} aria-hidden /> Permissionless
+              </li>
+              <li title="Meta Pool's 30-day stNEAR growth on mainnet, read from chain.">
+                <Flame size={13} aria-hidden /> Staking ≈ {fixed(staking.aprPercent, 1)}% today
+              </li>
             </ul>
           </div>
 
-          <aside className="lp-live" aria-label="Live series">
-            <div className="lp-live-head">
-              <div>
-                <span className="lp-mono-label">{live ? (series?.depositsOpen ? 'Open for deposits' : `Live · NEAR ${cfg.network}`) : 'Demo snapshot'}</span>
-                <strong>{series ? `${tenorLabel(series)} series · ${series.id}` : 'stNEAR series'}</strong>
-              </div>
-              <span className={`lp-phase lp-phase-${series?.phase === 'Paused' ? 'paused' : 'on'}`}>{series?.phase ?? pending}</span>
-            </div>
-
-            <div className="lp-live-rate">
-              <span className="lp-mono-label">stNEAR exchange rate</span>
-              <strong>{rate != null ? fixed(rate, 4) : pending}</strong>
-              <small>NEAR per stNEAR · read from {cfg.stNearContractId}</small>
-            </div>
-
-            <div className="lp-split" aria-label="What one deposit mints">
-              <span className="lp-split-in">1 stNEAR</span>
-              <ArrowRight size={14} aria-hidden />
-              <span className="lp-split-out">
-                <TokenBadge kind="PT" size="sm" />
-                {series ? fixed(1 - Number(series.depositFeeBps) / 10_000, 4) : '—'}
-              </span>
-              <Plus size={12} aria-hidden />
-              <span className="lp-split-out">
-                <TokenBadge kind="YT" size="sm" />
-                {series ? fixed(1 - Number(series.depositFeeBps) / 10_000, 4) : '—'}
-              </span>
-            </div>
-
-            <dl className="lp-live-rows">
-              <div>
-                <dt>Value locked</dt>
-                <dd>{featuredHeld != null ? `${amount(featuredHeld)} stNEAR` : pending}</dd>
-              </div>
-              <div>
-                <dt>{series?.depositsOpen ? 'Deposits close in' : 'Maturity in'}</dt>
-                <dd>{series ? countdown(series.depositsOpen ? series.cutoffMs : series.maturityMs) : pending}</dd>
-              </div>
-              <div>
-                <dt>Maturity</dt>
-                <dd>{series?.maturityExactLabel ?? pending}</dd>
-              </div>
-              <div>
-                <dt>Fees · deposit / fill</dt>
-                <dd>
-                  {featuredFee} / {marketFee}
-                </dd>
-              </div>
-            </dl>
-
-            <div className="lp-live-foot">
-              <a href={featured ? explorerAccountUrl(featured.contractId) : undefined} target="_blank" rel="noreferrer">
-                <Database size={13} aria-hidden /> {live ? (featured?.contractId ?? pending) : 'Demo contract'} <ArrowUpRight size={12} aria-hidden />
-              </a>
+          <TiltStage>
+            <span className="lp-float lp-float-a" aria-hidden>
+              <NearMark className="lp-float-near" /> Built on NEAR
+            </span>
+            <span className="lp-float lp-float-b" aria-hidden>
+              <BadgeCheck size={13} /> {backing?.ratio != null ? `${fixed(backing.ratio, 2)}% backed` : 'Fully backed'}
+            </span>
+            <aside className="lp-live" aria-label="Live series" onPointerEnter={() => setHovering(true)} onPointerLeave={() => setHovering(false)}>
               {rows.length > 1 && (
-                <a href="#series" className="lp-live-more">
-                  +{rows.length - 1} more series <ArrowRight size={12} aria-hidden />
-                </a>
+                <div className={`lp-live-tabs ${autoplay ? '' : 'lp-live-tabs-still'}`} role="tablist" aria-label="Series">
+                  {rows.map((r, i) => (
+                    <button
+                      key={`${r.contractId}-${i === shownIdx ? tick : ''}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={i === shownIdx}
+                      onClick={() => {
+                        setPickedIdx(i)
+                        setPinned(true)
+                      }}
+                    >
+                      {tenorLabel(r.display)} · {r.display.id.split('-').pop()}
+                    </button>
+                  ))}
+                </div>
               )}
-            </div>
-          </aside>
+              <div className="lp-live-head">
+                <div>
+                  <span className="lp-mono-label">{live ? (series?.depositsOpen ? 'Open for deposits' : `Live · NEAR ${cfg.network}`) : 'Demo snapshot'}</span>
+                  <strong>{series ? `${tenorLabel(series)} series · ${series.id}` : 'stNEAR series'}</strong>
+                </div>
+                <span className={`lp-phase lp-phase-${series?.phase === 'Paused' ? 'paused' : 'on'}`}>{series?.phase ?? pending}</span>
+              </div>
+
+              <ForgeDiagram pt={mintEach} yt={mintEach} />
+
+              <div className="lp-live-rate">
+                <div>
+                  <span className="lp-mono-label">stNEAR exchange rate</span>
+                  <strong>{rate != null ? <CountUp value={rate} digits={4} /> : pending}</strong>
+                  <small>NEAR per stNEAR · {cfg.stNearContractId}</small>
+                </div>
+                <div className="lp-live-apr">
+                  <span className="lp-mono-label">Staking APR</span>
+                  <b>{fixed(staking.aprPercent, 1)}%</b>
+                  <small>{staking.fromChain ? 'Meta Pool, 30 days' : 'assumed'}</small>
+                </div>
+              </div>
+
+              <dl className="lp-live-rows">
+                <div>
+                  <dt>Value locked</dt>
+                  <dd>{shownHeld != null ? `${amount(shownHeld)} stNEAR` : pending}</dd>
+                </div>
+                <div>
+                  <dt>{series?.depositsOpen ? 'Deposits close in' : 'Maturity in'}</dt>
+                  <dd>{series ? countdown(series.depositsOpen ? series.cutoffMs : series.maturityMs) : pending}</dd>
+                </div>
+                <div>
+                  <dt>Maturity</dt>
+                  <dd>{series?.maturityExactLabel ?? pending}</dd>
+                </div>
+                <div>
+                  <dt>Fees · deposit / fill</dt>
+                  <dd>
+                    {shownFee} / {marketFee}
+                  </dd>
+                </div>
+              </dl>
+
+              <div className="lp-live-foot">
+                <a href={shown ? explorerAccountUrl(shown.contractId) : undefined} target="_blank" rel="noreferrer">
+                  <Database size={13} aria-hidden /> {live ? (shown?.contractId ?? pending) : 'Demo contract'} <ArrowUpRight size={12} aria-hidden />
+                </a>
+                {shown?.display.depositsOpen && (
+                  <Link to={withSeries('/earn', shown.contractId)} className="lp-live-more">
+                    Deposit <ArrowRight size={12} aria-hidden />
+                  </Link>
+                )}
+              </div>
+            </aside>
+          </TiltStage>
         </div>
       </header>
 
@@ -483,18 +601,6 @@ export default function LandingPage() {
 
       <LandingFooter />
     </div>
-  )
-}
-
-function TrustItem({ icon: IconCmp, title, body }: { icon: Icon; title: string; body: string }) {
-  return (
-    <li>
-      <IconCmp size={16} aria-hidden />
-      <div>
-        <strong>{title}</strong>
-        <span>{body}</span>
-      </div>
-    </li>
   )
 }
 
