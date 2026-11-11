@@ -1,0 +1,59 @@
+:root {
+  --paper: #f3f1eb;
+  --paper-2: #ebe9e2;
+  --paper-3: #e3e1d9;
+  --ink: #171c1d;
+  --ink-soft: #4b5352;
+  --ink-muted: #7b8480;
+  --line: #d8d6ce;
+  --line-dark: #343b3a;
+  --acid: #d8f36b;
+  --acid-deep: #b7d550;
+  --rust: #c76f4e;
+  --rust-soft: #f1ddd2;
+  --blue: #55728b;
+  --blue-soft: #dfe8ee;
+  --white: #fbfaf7;
+  --mono: 'Space Mono', 'SFMono-Regular', Consolas, monospace;
+  --shadow: 0 10px 32px rgba(23, 28, 29, .05);
+  --radius-sm: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+}
+
+/* Focus visibility */
+*:focus-visible {
+  outline: 2px solid var(--acid-deep);
+  outline-offset: 2px;
+}
+*:focus:not(:focus-visible) {
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Skip link */
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: 8px;
+  z-index: 100;
+  padding: 8px 12px;
+  background: var(--ink);
+  color: var(--acid);
+  font: 12px var(--mono);
+}
+.skip-link:focus {
+  top: 8px;
+}

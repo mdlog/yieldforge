@@ -1,0 +1,11 @@
+# near-sdk 5.27 needs its matching near-sdk-core/near-sys versions; resolving against the crate's
+# rust-version picks those instead of newer, incompatible releases.
+[resolver]
+incompatible-rust-versions = "fallback"
+
+# NEAR host functions (promise_*, storage_*, …) are imports provided by the runtime. Rust ≥ 1.9x no longer
+# passes --allow-undefined to rust-lld for wasm32-unknown-unknown; the near-sys used with near-sdk 5.27 relies on it.
+[target.wasm32-unknown-unknown]
+# `--cfg near` is what cargo-near sets: near-sdk then uses the runtime host functions (panic_utf8, sha256, …)
+# instead of local fallbacks — without it every panic surfaces as a bare `unreachable` trap.
+rustflags = ["--cfg", "near", "-C", "link-arg=--allow-undefined"]

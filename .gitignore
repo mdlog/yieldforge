@@ -1,0 +1,24 @@
+# Dependencies and build output
+node_modules/
+contracts/target/
+yieldforge/dist/
+yieldforge/dist-next/
+yieldforge/dist-prev/
+*.tsbuildinfo
+
+# Secrets: deploy keys live in yieldforge/.env and ~/.near-credentials — never commit them
+.env
+.env.*
+!.env.example
+# Public VITE_* build config for production; checked into the repo on purpose (no secrets).
+!yieldforge/.env.production
+*.pem
+*.key
+.near-credentials/
+
+# Local scratch and tool leftovers
+tmp/
+*.chrome-headless-*/
+.npm-cache/
+*.log
+.DS_Store
