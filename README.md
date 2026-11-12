@@ -29,6 +29,7 @@
 
 <p align="center">
   <a href="https://yieldforge.mdloglabs.org"><strong>Live demo</strong></a> ·
+  <a href="https://youtu.be/7dZhm4mILFo"><strong>Demo video</strong></a> ·
   <a href="https://yieldforge.mdloglabs.org/docs">In-app docs</a> ·
   <a href="#try-it-judge-walkthrough">Try it</a> ·
   <a href="#deployed-contracts-near-testnet">Contracts</a> ·
@@ -90,12 +91,16 @@ flowchart LR
    (records RT). Holders then burn PT/YT for stNEAR. There is no deadline and no queue.
 
 Series run as a ladder of tenors (7, 30 and 90 days). A new series opens its deposit window before the previous one of the same
-tenor closes, so there is always somewhere to deposit.
+tenor closes, so there is always somewhere to deposit. For judging there is also a one-day series, `stnear-1d-01`, that settles
+on 2026-11-17, so the whole lifecycle can be checked during the judging window.
 
 ## Try it (judge walkthrough)
 
 **Live demo:** https://yieldforge.mdloglabs.org (NEAR testnet, live contracts). Every number on screen is read from
 the chain on page load.
+
+**Demo video (2 min):** https://youtu.be/7dZhm4mILFo. It shows one stake-and-deposit, a listing and a second account's
+purchase as real testnet transactions; the explorer links are in the video description.
 
 ### A. Without a wallet (about 2 minutes)
 
@@ -109,17 +114,17 @@ the chain on page load.
 
 ### B. With a NEAR testnet wallet (about 5 minutes)
 
-Prerequisite: a testnet account in [MyNearWallet](https://testnet.mynearwallet.com), Meteor or HOT with ~3 testnet NEAR
-(free from the [faucet](https://near-faucet.io)).
+Prerequisite: a NEAR testnet account in [Meteor Wallet](https://wallet.meteorwallet.app) (browser extension or web; **Connect
+wallet** signs in with Meteor, and MyNearWallet and HOT are only fallbacks) with ~3 testnet NEAR, free from the
+[NEAR faucet](https://docs.near.org/getting-started/faucet).
 
 | Do | See |
 | --- | --- |
 | **Connect wallet** (top right), open **Deposit & sell** | Your NEAR, stNEAR, PT and YT balances, and the series that are open for deposits |
-| Step **1 · Get stNEAR**: stake 1 NEAR | About 0.31 stNEAR arrives (1 stNEAR ≈ 3.2 NEAR on testnet); the flow moves to step 2 |
-| Step **2 · Deposit stNEAR**: pick an open series, enter 0.3, tick the risk box, **Deposit** | PT and YT are minted 1:1 minus the fee; the flow moves to step 3 |
-| Step **3 · Sell your YT**: click **Use** (fair price at 7 % APR), choose how long the listing stays open, **List YT for sale** | The listing appears on **Buy YT** |
+| Step **1 · Get stNEAR**: pick an open series, enter 1 NEAR, keep **Also deposit it into …** ticked, tick the risk box, **Stake & deposit** | One transaction with two actions (`deposit_and_stake` + `ft_transfer_call`), one signature; PT and YT appear in **Your wallet** (about 0.31 each, 1 stNEAR ≈ 3.2 NEAR on testnet) and the flow moves to step 3. Untick the box to only stake, then deposit in step 2 |
+| Step **3 · Sell your YT**: click **Use** (fair price at Meta Pool's current staking APR, about 3.8 %), choose how long the listing stays open, **List YT for sale** | The page shows the fixed APR you lock in; the listing appears on **Buy YT** |
 | From a **second account**: **Buy YT → Buy** | The YT shows in that account's **Portfolio**; the seller receives the NEAR in the same transaction (check the explorer link) |
-| After the series cutoff: **Portfolio → Capture baseline**; after maturity: **Request settlement**, then **Redeem** | R0, then RT are recorded on-chain; redemption pays stNEAR |
+| Lifecycle, on **`stnear-1d-01`**: buy its YT on **Buy YT** (a listing is open until 2026-11-19), then after **2026-11-17 06:00 UTC** open **Portfolio** with that series selected, **Enable stNEAR payouts** if asked, and **Redeem YT** | The hosted keeper records R0 at the cutoff (2026-11-16 06:00 UTC) and RT at maturity, usually within 10 minutes; both show under **Docs → Rates**. Redemption pays stNEAR (YT pays 0 while the testnet stNEAR rate is flat, PT pays 1 stNEAR per unit). **Capture baseline** / **Request settlement** buttons appear in Portfolio if the keeper has not run yet |
 
 ### C. Verify on-chain
 
@@ -173,7 +178,8 @@ Or browse the accounts on [NearBlocks testnet](https://testnet.nearblocks.io/add
   tenor ladder easy to deploy, inspect and retire.
 - **Cheap, fast finality.** Listings worth a few thousandths of a NEAR fill in one transaction, which keeps short 7-day series
   practical.
-- **Wallets.** NEAR Wallet Selector with MyNearWallet, Meteor and HOT; users sign every transaction themselves.
+- **Wallets.** NEAR Wallet Selector: **Connect wallet** signs in with Meteor Wallet, with MyNearWallet and HOT as fallbacks if
+  Meteor cannot load; users sign every transaction themselves.
 
 ## Deployed contracts (NEAR testnet)
 
@@ -182,6 +188,7 @@ the market fee is 0.25 %, paid by the buyer.
 
 | Series account | Deposits close (UTC) | Maturity (UTC) | Deposit fee |
 | --- | --- | --- | --- |
+| [`stnear-1d-01.solidnecktie5405.testnet`](https://testnet.nearblocks.io/address/stnear-1d-01.solidnecktie5405.testnet) | 2026-11-16 06:00 | 2026-11-17 06:00 | 0.01 % |
 | [`stnear-7d-01.solidnecktie5405.testnet`](https://testnet.nearblocks.io/address/stnear-7d-01.solidnecktie5405.testnet) | 2026-11-13 00:00 | 2026-11-20 00:00 | 0.02 % |
 | [`stnear-7d-02.solidnecktie5405.testnet`](https://testnet.nearblocks.io/address/stnear-7d-02.solidnecktie5405.testnet) | 2026-11-20 00:00 | 2026-11-27 00:00 | 0.02 % |
 | [`stnear-30d-01.solidnecktie5405.testnet`](https://testnet.nearblocks.io/address/stnear-30d-01.solidnecktie5405.testnet) | 2026-11-14 00:00 | 2026-12-14 00:00 | 0.08 % |
@@ -307,6 +314,7 @@ Deploy keys (`NEAR_ACCOUNT`, `NEAR_PRIVATE_KEY`) are only for the scripts. Keep 
   project builds on, not part of this repository. Parts of the code and documentation were written with AI coding assistants and
   reviewed by the team. The NEAR, Meta Pool and wallet logos belong to their owners and only identify those projects in the UI.
 - **Live demo:** https://yieldforge.mdloglabs.org, kept online through judging.
+- **Demo video:** https://youtu.be/7dZhm4mILFo
 
 ## License
 
