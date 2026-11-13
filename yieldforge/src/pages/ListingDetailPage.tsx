@@ -220,6 +220,11 @@ export default function ListingDetailPage() {
                   {isConnected || !live ? 'Buy YT' : 'Connect wallet to buy'} <ArrowRight size={15} aria-hidden />
                 </Button>
               )}
+              {tx.phase === 'idle' && (
+                <p className="earn-hint">
+                  Funds on another chain? <Link to={`/any-chain?tab=buy-yt&listing=${encodeURIComponent(listing.id)}`}>Pay with USDC, ETH, BTC or SOL</Link> via NEAR Intents.
+                </p>
+              )}
             </>
           ) : (
             <p className="earn-note">

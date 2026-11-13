@@ -1,4 +1,7 @@
-# YieldForge Contracts (v2)
+# YieldForge Contracts (v3)
+
+v3 adds two things for the NEAR Intents flows and keeps everything else from v2: a deposit `msg` that names who receives the
+PT + YT, and an optional total deposit cap set at `new`. The testnet series listed below run v2; new deployments use v3.
 
 One NEAR Rust contract per series: `series/`. It is the stNEAR vault, the **YT token (NEP-141 / NEP-145 / NEP-148)**,
 the PT ledger, and the fixed-price YT marketplace. ARCH §4.4 allows co-locating the marketplace when state and methods
@@ -28,8 +31,8 @@ If nobody captured the baseline, settlement uses RT as the baseline (YT pays 0, 
 
 | Method | Caller | Deposit | Notes |
 |---|---|---|---|
-| `new(owner_id, series_id, underlying_token, deposits_close_at, maturity_at, deposit_fee_bps?, fee_collector?)` | deployer | — | cutoff must be future, maturity after cutoff, fee ≤ 1% |
-| `ft_on_transfer` (via stNEAR `ft_transfer_call`) | stNEAR only | 1 yocto (on stNEAR) | rejects after cutoff, below minimum, when paused; panics refund the sender |
+| `new(owner_id, series_id, underlying_token, deposits_close_at, maturity_at, deposit_fee_bps?, fee_collector?, deposit_cap?)` | deployer | — | cutoff must be future, maturity after cutoff, fee ≤ 1%; `deposit_cap` (stNEAR, optional) caps total deposits |
+| `ft_on_transfer` (via stNEAR `ft_transfer_call`) | stNEAR only | 1 yocto (on stNEAR) | rejects after cutoff, below minimum, over the cap, when paused; panics refund the sender. `msg` is empty (PT + YT go to the sender) or `{"receiver_id":"<account>"}` (they go to that account; NEAR Intents Express deposits use this). Any other `msg` is refused |
 | `create_listing(quantity, unit_price, expires_at)` | YT holder | storage (≈0.01 NEAR, excess refunded) | moves YT into escrow; can't list more than held |
 | `buy(listing_id, quantity)` | anyone but the seller | price + 0.25% fee (+ one-time storage) | atomic delivery + payment, excess refunded |
 | `cancel_listing(listing_id)` | seller | 1 yocto | returns unfilled YT |
@@ -40,10 +43,10 @@ If nobody captured the baseline, settlement uses RT as the baseline (YT pays 0, 
 | `ft_transfer`, `ft_transfer_call`, `storage_*`, `ft_metadata` | standard NEP-141/145/148 for YT | | sending YT to the contract itself is blocked (use `create_listing`) |
 | `pause` / `unpause` | owner | — | blocks deposits, listings and buys — never redemption, cancel or expiry |
 | `withdraw_fees()` | owner | 1 yocto | sends only accumulated deposit fees (stNEAR) to the fee collector |
-| `get_series`, `get_position`, `get_listing(s)`, `preview_redeem`, `pt_balance_of`, `ft_balance_of` | views | | `get_series` exposes fees, minimum, escrow, payout per unit |
+| `get_series`, `get_position`, `get_listing(s)`, `preview_redeem`, `pt_balance_of`, `ft_balance_of` | views | | `get_series` exposes fees, minimum, escrow, payout per unit, `deposit_cap` and `deposit_cap_remaining` |
 
 Events: NEP-141 `ft_mint` / `ft_transfer` / `ft_burn` for YT, plus NEP-297 `yieldforge` events
-(`series_created`, `deposit_received`, `baseline_captured`, `listing_created`, `listing_filled`, `listing_cancelled`,
+(`series_created`, `deposit_received` (with `sender_id` and the receiving `account_id`), `baseline_captured`, `listing_created`, `listing_filled`, `listing_cancelled`,
 `listing_expired`, `settlement_finalized`, `claims_redeemed`, `redemption_reverted`, `pt_transfer`, `contract_paused`).
 
 ## Invariants (ARCH §12.2) and where they are tested
@@ -61,7 +64,7 @@ Events: NEP-141 `ft_mint` / `ft_transfer` / `ft_burn` for YT, plus NEP-297 `yiel
 
 ```bash
 cargo test                            # 40 unit tests (near-sdk unit-testing)
-bash ../scripts/build-contract.sh     # tests + wasm build + wasm-opt → target/yieldforge_series_v2.wasm (~255 KB)
+bash ../scripts/build-contract.sh     # tests + wasm build + wasm-opt → target/yieldforge_series_v3.wasm (~292 KB)
 node ../scripts/deploy-series.mjs --account stnear-90d-02 --series-id stnear-90d-02 \
   --close 2026-11-11T00:00:00Z --maturity 2027-02-09T00:00:00Z
 node ../scripts/e2e-testnet.mjs --series <test-account> --buyer <buyer-account> --cleanup   # use a short test series

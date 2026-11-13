@@ -136,6 +136,10 @@ pub struct SeriesView {
     pub baseline_timestamp: Option<U64>,
     pub settlement_rate: Option<U128>,
     pub settlement_timestamp: Option<U64>,
+    /// Most stNEAR the series accepts in total (gross deposits); None = uncapped.
+    pub deposit_cap: Option<U128>,
+    /// stNEAR still accepted before the cap; None = uncapped.
+    pub deposit_cap_remaining: Option<U128>,
     pub total_stnear_deposited: U128,
     pub total_pt_minted: U128,
     pub total_yt_minted: U128,
@@ -207,6 +211,16 @@ pub struct Contract {
     listings: IterableMap<u64, Listing>,
     next_listing_id: u64,
     escrowed: u128,
+    /// Most stNEAR accepted in total (gross); a safety limit for unaudited deployments. Fixed at init.
+    deposit_cap: Option<u128>,
+}
+
+/// Optional `msg` of a deposit (`ft_transfer_call` on stNEAR). Empty msg = mint to the sender.
+/// `receiver_id` lets a router — e.g. NEAR Intents / 1Click delivering a cross-chain swap with
+/// `customRecipientMsg` — deposit on a user's behalf: PT and YT are minted to `receiver_id`.
+#[near(serializers = [json])]
+struct DepositMsg {
+    receiver_id: AccountId,
 }
 
 #[near]
@@ -220,6 +234,7 @@ impl Contract {
         maturity_at: U64,
         deposit_fee_bps: Option<u16>,
         fee_collector: Option<AccountId>,
+        deposit_cap: Option<U128>,
     ) -> Self {
         require!(deposits_close_at.0 > env::block_timestamp(), "Deposit cutoff must be in the future");
         require!(maturity_at.0 > deposits_close_at.0, "Maturity must be after the deposit cutoff");
@@ -248,6 +263,7 @@ impl Contract {
             listings: IterableMap::new(StorageKey::Listings),
             next_listing_id: 1,
             escrowed: 0,
+            deposit_cap: deposit_cap.map(|c| c.0),
         };
         // The contract's own YT account holds listing escrow.
         this.yt.internal_register_account(&env::current_account_id());
@@ -661,6 +677,8 @@ impl Contract {
             baseline_timestamp: self.baseline_at.map(U64),
             settlement_rate: self.settlement_rate.map(U128),
             settlement_timestamp: self.settlement_at.map(U64),
+            deposit_cap: self.deposit_cap.map(U128),
+            deposit_cap_remaining: self.deposit_cap.map(|c| U128(c.saturating_sub(self.total_deposited))),
             total_stnear_deposited: U128(self.total_deposited),
             total_pt_minted: U128(self.total_minted),
             total_yt_minted: U128(self.total_minted),
@@ -735,31 +753,38 @@ impl Contract {
 impl FungibleTokenReceiver for Contract {
     /// Panicking here makes the stNEAR contract refund the sender (NEP-141).
     fn ft_on_transfer(&mut self, sender_id: AccountId, amount: U128, msg: String) -> PromiseOrValue<U128> {
-        let _ = msg;
         require!(env::predecessor_account_id() == self.underlying, "Only the underlying stNEAR can be deposited");
         require!(!self.paused, "Deposits are paused");
         require!(env::block_timestamp() < self.deposits_close_at, "Deposits closed");
         require!(amount.0 >= MIN_DEPOSIT, "Below minimum deposit");
+        if let Some(cap) = self.deposit_cap {
+            require!(self.total_deposited + amount.0 <= cap, "Deposit cap reached");
+        }
+        let receiver_id = if msg.trim().is_empty() {
+            sender_id.clone()
+        } else {
+            serde_json::from_str::<DepositMsg>(&msg).unwrap_or_else(|_| env::panic_str("Invalid deposit msg")).receiver_id
+        };
 
         let fee = mul_div(amount.0, self.deposit_fee_bps as u128, BPS);
         let net = amount.0 - fee;
-        if !self.yt.accounts.contains_key(&sender_id) {
-            self.yt.internal_register_account(&sender_id);
+        if !self.yt.accounts.contains_key(&receiver_id) {
+            self.yt.internal_register_account(&receiver_id);
         }
-        self.yt.internal_deposit(&sender_id, net);
-        let pt = self.pt.get(&sender_id).copied().unwrap_or(0);
-        self.pt.insert(sender_id.clone(), pt + net);
+        self.yt.internal_deposit(&receiver_id, net);
+        let pt = self.pt.get(&receiver_id).copied().unwrap_or(0);
+        self.pt.insert(receiver_id.clone(), pt + net);
         self.pt_supply += net;
-        let deposited = self.deposits.get(&sender_id).copied().unwrap_or(0);
-        self.deposits.insert(sender_id.clone(), deposited + amount.0);
+        let deposited = self.deposits.get(&receiver_id).copied().unwrap_or(0);
+        self.deposits.insert(receiver_id.clone(), deposited + amount.0);
         self.total_deposited += amount.0;
         self.total_minted += net;
         self.fee_balance += fee;
 
-        FtMint { owner_id: &sender_id, amount: U128(net), memo: Some("deposit") }.emit();
+        FtMint { owner_id: &receiver_id, amount: U128(net), memo: Some("deposit") }.emit();
         emit_event(
             "deposit_received",
-            json!({ "account_id": sender_id, "amount": amount, "fee": U128(fee), "pt_minted": U128(net), "yt_minted": U128(net) }),
+            json!({ "account_id": receiver_id, "sender_id": sender_id, "amount": amount, "fee": U128(fee), "pt_minted": U128(net), "yt_minted": U128(net) }),
         );
         PromiseOrValue::Value(U128(0))
     }

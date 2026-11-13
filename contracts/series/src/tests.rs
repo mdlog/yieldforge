@@ -60,7 +60,7 @@ fn callback(ts: u64, result: PromiseResult) {
 
 fn setup() -> Contract {
     call(owner(), 0, 0);
-    Contract::new(owner(), "stnear-90d-02".into(), stnear(), U64(CLOSE), U64(MATURITY), None, None)
+    Contract::new(owner(), "stnear-90d-02".into(), stnear(), U64(CLOSE), U64(MATURITY), None, None, None)
 }
 
 fn deposit(c: &mut Contract, who: AccountId, amount: u128) {
@@ -520,4 +520,75 @@ fn yt_metadata_is_nep148() {
     assert_eq!(m.spec, "ft-1.0.0");
     assert_eq!(m.decimals, 24);
     assert_eq!(m.symbol, "YT-STNEAR-90D-02");
+}
+
+// ---- Deposits on behalf of a receiver (NEAR Intents / 1Click `customRecipientMsg`) -------------
+
+fn deposit_msg(c: &mut Contract, sender: AccountId, amount: u128, msg: &str) {
+    call(stnear(), 10, 0);
+    let _ = c.ft_on_transfer(sender, U128(amount), msg.to_string());
+}
+
+#[test]
+fn deposit_with_receiver_msg_mints_to_the_receiver_not_the_sender() {
+    let mut c = setup();
+    deposit_msg(&mut c, acct("solver.intents.near"), ONE, r#"{"receiver_id":"carol.testnet"}"#);
+    let carol_pos = c.get_position(carol()).expect("receiver has a position");
+    let net = ONE - mul_div(ONE, 25, BPS);
+    assert_eq!(carol_pos.pt_balance.0, net);
+    assert_eq!(carol_pos.yt_balance.0, net);
+    assert_eq!(carol_pos.locked_stnear.0, ONE);
+    assert!(c.get_position(acct("solver.intents.near")).is_none(), "sender gets nothing");
+}
+
+#[test]
+fn empty_msg_still_mints_to_the_sender() {
+    let mut c = setup();
+    deposit_msg(&mut c, alice(), ONE, "");
+    assert!(c.get_position(alice()).is_some());
+}
+
+#[test]
+#[should_panic(expected = "Invalid deposit msg")]
+fn malformed_deposit_msg_is_refused() {
+    let mut c = setup();
+    deposit_msg(&mut c, alice(), ONE, "not json");
+}
+
+#[test]
+#[should_panic(expected = "Invalid deposit msg")]
+fn deposit_msg_with_an_invalid_account_is_refused() {
+    let mut c = setup();
+    deposit_msg(&mut c, alice(), ONE, r#"{"receiver_id":"Not An Account!"}"#);
+}
+
+fn setup_capped(cap: u128) -> Contract {
+    call(owner(), 0, 0);
+    Contract::new(owner(), "stnear-30d-01".into(), stnear(), U64(CLOSE), U64(MATURITY), None, None, Some(U128(cap)))
+}
+
+#[test]
+fn deposits_up_to_the_cap_are_accepted() {
+    let mut c = setup_capped(2 * ONE);
+    deposit(&mut c, alice(), ONE);
+    deposit(&mut c, bob(), ONE);
+    let s = c.get_series();
+    assert_eq!(s.total_stnear_deposited.0, 2 * ONE);
+    assert_eq!(s.deposit_cap, Some(U128(2 * ONE)));
+    assert_eq!(s.deposit_cap_remaining, Some(U128(0)));
+}
+
+#[test]
+#[should_panic(expected = "Deposit cap reached")]
+fn a_deposit_over_the_cap_is_refused() {
+    let mut c = setup_capped(2 * ONE);
+    deposit(&mut c, alice(), ONE);
+    deposit(&mut c, bob(), ONE + 1);
+}
+
+#[test]
+fn uncapped_series_reports_no_cap() {
+    let c = setup();
+    assert_eq!(c.get_series().deposit_cap, None);
+    assert_eq!(c.get_series().deposit_cap_remaining, None);
 }

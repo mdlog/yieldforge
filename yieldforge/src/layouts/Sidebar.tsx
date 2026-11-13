@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import type { ComponentType } from 'react'
-import { FileText, ArrowRight, HandCoins, ShoppingBag, ShieldCheck, WalletCards, Gauge, History } from 'lucide-react'
+import { FileText, ArrowRight, HandCoins, ShoppingBag, ShieldCheck, WalletCards, Gauge, History, Globe2 } from 'lucide-react'
 import { getNearConfig } from '@/lib/near/config'
 import { isLiveMode } from '@/lib/near/wallet'
 import { BrandMark } from '@/components/BrandMark'
@@ -20,6 +20,7 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
         <span className="sidebar-label">Trade</span>
         <NavItem to="/marketplace" label="Buy YT" icon={ShoppingBag} onClick={onClose} />
         <NavItem to="/earn" label="Deposit & sell" icon={HandCoins} onClick={onClose} />
+        <NavItem to="/any-chain" label="From any chain" icon={Globe2} onClick={onClose} />
         <NavItem to="/portfolio" label="Portfolio" icon={WalletCards} onClick={onClose} />
       </nav>
 

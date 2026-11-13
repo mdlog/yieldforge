@@ -11,33 +11,44 @@ const require = createRequire(path.join(ROOT, 'yieldforge', 'package.json'))
 export const nearApi = require('near-api-js')
 const { connect, keyStores, KeyPair, transactions } = nearApi
 
-export const NETWORK = 'testnet'
-export const STNEAR = 'meta-v2.pool.testnet'
+/** Network of every script run: NEAR_NETWORK=mainnet node scripts/... (default testnet). */
+export const NETWORK = process.env.NEAR_NETWORK === 'mainnet' ? 'mainnet' : 'testnet'
+const NETWORKS = {
+  testnet: { stNear: 'meta-v2.pool.testnet', rpc: 'https://rpc.testnet.fastnear.com', explorer: 'https://testnet.nearblocks.io' },
+  mainnet: { stNear: 'meta-pool.near', rpc: 'https://rpc.mainnet.fastnear.com', explorer: 'https://nearblocks.io' },
+}
+export const STNEAR = NETWORKS[NETWORK].stNear
 export const YOCTO = 10n ** 24n
 export const TGAS = 10n ** 12n
+/** The app config file for this network: public VITE_* values, committed. */
+export const APP_ENV_FILE = `.env.${NETWORK}`
+/** Deploy keys: testnet keeps them in yieldforge/.env; mainnet in yieldforge/.env.mainnet.local. Both git-ignored. */
+export const SECRET_ENV_FILE = NETWORK === 'mainnet' ? '.env.mainnet.local' : '.env'
+
+function readEnvFile(name) {
+  const file = path.join(ROOT, 'yieldforge', name)
+  const env = {}
+  if (!fs.existsSync(file)) return env
+  for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+    const m = line.match(/^([A-Z0-9_]+)=(.*)$/)
+    if (m) env[m[1]] = m[2].trim()
+  }
+  return env
+}
 
 /**
- * yieldforge/.env (local, git-ignored: the deploy key) merged with yieldforge/.env.testnet (public app
- * config, committed). As in Vite's testnet mode, values in .env.testnet win for the keys it sets.
+ * The deploy key file merged with the public app config of NEAR_NETWORK (yieldforge/.env.testnet or
+ * .env.mainnet). As in Vite's mode files, values in the app config win for the keys it sets.
  */
 export function loadEnv() {
-  const read = (name) => {
-    const file = path.join(ROOT, 'yieldforge', name)
-    const env = {}
-    if (!fs.existsSync(file)) return env
-    for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
-      const m = line.match(/^([A-Z0-9_]+)=(.*)$/)
-      if (m) env[m[1]] = m[2].trim()
-    }
-    return env
-  }
-  const env = { ...read('.env'), ...read('.env.testnet') }
-  if (!env.NEAR_ACCOUNT || !env.NEAR_PRIVATE_KEY) throw new Error('NEAR_ACCOUNT / NEAR_PRIVATE_KEY missing in yieldforge/.env')
+  const env = { ...readEnvFile(SECRET_ENV_FILE), ...readEnvFile(APP_ENV_FILE) }
+  if (!env.NEAR_ACCOUNT || !env.NEAR_PRIVATE_KEY) throw new Error(`NEAR_ACCOUNT / NEAR_PRIVATE_KEY missing in yieldforge/${SECRET_ENV_FILE}`)
+  if (env.VITE_STNEAR_CONTRACT && env.VITE_STNEAR_CONTRACT !== STNEAR) throw new Error(`${APP_ENV_FILE} names stNEAR ${env.VITE_STNEAR_CONTRACT}, expected ${STNEAR} on ${NETWORK}`)
   return env
 }
 
 export function nodeUrl(env = loadEnv()) {
-  return env.VITE_NEAR_NODE_URL || 'https://rpc.testnet.fastnear.com'
+  return env.VITE_NEAR_NODE_URL || NETWORKS[NETWORK].rpc
 }
 
 /** Connection whose key store signs for the deployer and any of its sub-accounts (same key). */
@@ -87,7 +98,7 @@ export const parse = (decimal) => {
   const [w, f = ''] = String(decimal).split('.')
   return BigInt(w) * YOCTO + BigInt((f + '0'.repeat(24)).slice(0, 24))
 }
-export const explorer = (hash) => `https://testnet.nearblocks.io/txns/${hash}`
+export const explorer = (hash) => `${NETWORKS[NETWORK].explorer}/txns/${hash}`
 
 /** Sign a function call; returns { hash, value } or throws with the contract's panic message. */
 export async function callFn(account, contractId, methodName, args, { gas = 30n * TGAS, deposit = 0n } = {}) {

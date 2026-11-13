@@ -1,13 +1,17 @@
-// Create a sub-account of NEAR_ACCOUNT, deploy the v2 series contract, and initialize it — one atomic
+// Create a sub-account of NEAR_ACCOUNT, deploy the v3 series contract, and initialize it — one atomic
 // transaction, so a failed `new` leaves no half-initialized account behind.
 //
 //   node scripts/deploy-series.mjs --account yf-90d-02 --series-id stnear-90d-02 \
-//     --close 2026-11-11T00:00:00Z --maturity 2027-02-09T00:00:00Z [--balance 2.85] [--fee-bps 25]
+//     --close 2026-11-11T00:00:00Z --maturity 2027-02-09T00:00:00Z [--fee-bps 25] [--cap 100] [--balance N]
+//
+// Mainnet: NEAR_NETWORK=mainnet node scripts/deploy-series.mjs ... (key in yieldforge/.env.mainnet.local).
+// --cap is the most stNEAR the series accepts in total (recommended on mainnet: the contract is unaudited).
+// --balance defaults to the storage the code needs (1 NEAR per 100 kB) plus 0.15 NEAR for state.
 //
 // Times may also be relative: --close +6m --maturity +12m
 import fs from 'fs'
 import path from 'path'
-import { ROOT, STNEAR, TGAS, accountExists, connectAs, ensureStNearStorage, explorer, fmt, nearApi, nearBalance, parse, view } from './near-lib.mjs'
+import { NETWORK, ROOT, STNEAR, TGAS, accountExists, connectAs, ensureStNearStorage, explorer, fmt, nearApi, nearBalance, parse, view } from './near-lib.mjs'
 
 const { transactions } = nearApi
 
@@ -27,13 +31,17 @@ function toNanos(value) {
   return (BigInt(Math.floor(ms)) * 1_000_000n).toString()
 }
 
-const wasmPath = path.join(ROOT, 'contracts', 'target', 'yieldforge_series_v2.wasm')
+const wasmPath = path.join(ROOT, 'contracts', 'target', 'yieldforge_series_v3.wasm')
 const code = fs.readFileSync(wasmPath)
 const { env, publicKey, account } = await connectAs([])
 const subId = `${arg('account')}.${env.NEAR_ACCOUNT}`
 const close = toNanos(arg('close'))
 const maturity = toNanos(arg('maturity'))
-const balance = parse(arg('balance', '2.85'))
+// Storage staking: 10^19 yoctoNEAR per byte. The code dominates; 0.15 NEAR covers the series' own state.
+const STORAGE_PER_BYTE = 10n ** 19n
+const balance = process.argv.includes('--balance') ? parse(arg('balance')) : BigInt(code.length) * STORAGE_PER_BYTE + parse('0.15')
+const capArg = process.argv.includes('--cap') ? parse(arg('cap')) : null
+if (NETWORK === 'mainnet' && capArg === null) throw new Error('Mainnet series need --cap <stNEAR>: the contract is unaudited')
 const initArgs = {
   owner_id: env.NEAR_ACCOUNT,
   series_id: arg('series-id'),
@@ -42,11 +50,12 @@ const initArgs = {
   maturity_at: maturity,
   deposit_fee_bps: Number(arg('fee-bps', '25')),
   fee_collector: env.NEAR_ACCOUNT,
+  deposit_cap: capArg === null ? null : capArg.toString(),
 }
 
 if (await accountExists(subId)) throw new Error(`${subId} already exists — pick another --account`)
 const available = await nearBalance(env.NEAR_ACCOUNT)
-console.log(`deployer ${env.NEAR_ACCOUNT}: ${fmt(available, 3)} NEAR · wasm ${(code.length / 1024).toFixed(1)} KB · new account balance ${fmt(balance, 3)} NEAR`)
+console.log(`${NETWORK} · deployer ${env.NEAR_ACCOUNT}: ${fmt(available, 3)} NEAR · wasm ${(code.length / 1024).toFixed(1)} KB · new account balance ${fmt(balance, 3)} NEAR`)
 if (available < balance + parse('0.05')) throw new Error('Not enough NEAR on the deployer for this balance plus fees')
 
 const deployer = await account(env.NEAR_ACCOUNT)
@@ -69,4 +78,4 @@ const reg = await ensureStNearStorage(deployer, subId)
 if (reg) console.log(`registered ${subId} on ${STNEAR} · tx ${explorer(reg.hash)}`)
 
 const s = await view(subId, 'get_series')
-console.log(JSON.stringify({ series_id: s.series_id, status: s.status, deposits_close_at: new Date(Number(BigInt(s.deposits_close_at) / 1_000_000n)).toISOString(), maturity_at: new Date(Number(BigInt(s.maturity_at) / 1_000_000n)).toISOString(), deposit_fee_bps: s.deposit_fee_bps, yt_token: s.yt_token }, null, 2))
+console.log(JSON.stringify({ series_id: s.series_id, status: s.status, deposits_close_at: new Date(Number(BigInt(s.deposits_close_at) / 1_000_000n)).toISOString(), maturity_at: new Date(Number(BigInt(s.maturity_at) / 1_000_000n)).toISOString(), deposit_fee_bps: s.deposit_fee_bps, deposit_cap: s.deposit_cap, yt_token: s.yt_token }, null, 2))

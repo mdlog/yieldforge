@@ -30,9 +30,9 @@ function fileEnv(name) {
   return env
 }
 
-const env = { ...fileEnv('.env.testnet'), ...process.env }
+const env = { ...fileEnv(`.env.${process.env.VITE_NEAR_NETWORK === 'mainnet' ? 'mainnet' : 'testnet'}`), ...process.env }
 const networkId = env.VITE_NEAR_NETWORK || 'testnet'
-const nodeUrl = env.VITE_NEAR_NODE_URL || 'https://rpc.testnet.fastnear.com'
+const nodeUrl = env.VITE_NEAR_NODE_URL || `https://rpc.${networkId}.fastnear.com`
 const ids = (env.VITE_SERIES_CONTRACTS || env.VITE_SERIES_CONTRACT || '')
   .split(',')
   .map((s) => s.trim())
@@ -92,7 +92,7 @@ async function call(contractId, method) {
       actions: [transactions.functionCall(method, Buffer.from('{}'), 60n * TGAS, 0n)],
     })
     const failed = [outcome.status, ...(outcome.receipts_outcome ?? []).map((r) => r.outcome?.status)].find((s) => s?.Failure)
-    const link = `https://testnet.nearblocks.io/txns/${outcome.transaction.hash}`
+    const link = `https://${networkId === 'mainnet' ? '' : 'testnet.'}nearblocks.io/txns/${outcome.transaction.hash}`
     if (failed) throw Object.assign(new Error(JSON.stringify(failed.Failure)), { link })
     console.log(`  ${method}: ${link}`)
   } catch (e) {

@@ -14,6 +14,7 @@ const SeriesPage = lazy(() => import('@/pages/SeriesPage'))
 const EarnPage = lazy(() => import('@/pages/EarnPage'))
 const ListingDetailPage = lazy(() => import('@/pages/ListingDetailPage'))
 const PortfolioPage = lazy(() => import('@/pages/PortfolioPage'))
+const AnyChainPage = lazy(() => import('@/pages/AnyChainPage'))
 const CalculatorPage = lazy(() => import('@/pages/CalculatorPage'))
 const TransactionPage = lazy(() => import('@/pages/TransactionPage'))
 const NotFoundPage = lazy(() => import('@/pages/NotFoundPage'))
@@ -58,6 +59,7 @@ export default function App() {
                   <Route path="/create-listing" element={<RedirectKeepingQuery to="/earn?step=sell" />} />
                   <Route path="/listing/:id" element={<ListingDetailPage />} />
                   <Route path="/portfolio" element={<PortfolioPage />} />
+                  <Route path="/any-chain" element={<AnyChainPage />} />
                   <Route path="/calculator" element={<CalculatorPage />} />
                   <Route path="/transactions/:id" element={<TransactionPage />} />
                   <Route path="*" element={<NotFoundPage />} />

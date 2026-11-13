@@ -26,7 +26,8 @@ const TESTNET: NearConfig = {
 
 const MAINNET: NearConfig = {
   network: 'mainnet',
-  nodeUrl: 'https://rpc.mainnet.near.org',
+  // rpc.mainnet.near.org rate-limits hard (429s); FastNEAR is the RPC the scripts and keeper use too.
+  nodeUrl: 'https://rpc.mainnet.fastnear.com',
   explorerUrl: 'https://nearblocks.io',
   nearBlocksApiUrl: 'https://api.nearblocks.io',
   stNearContractId: 'meta-pool.near',

@@ -45,6 +45,7 @@
 - [Try it (judge walkthrough)](#try-it-judge-walkthrough)
 - [Features](#features)
 - [How NEAR is used](#how-near-is-used)
+- [From any chain (NEAR Intents)](#from-any-chain-near-intents)
 - [Deployed contracts (NEAR testnet)](#deployed-contracts-near-testnet)
 - [Architecture](#architecture)
 - [Tech stack](#tech-stack)
@@ -126,6 +127,18 @@ wallet** signs in with Meteor, and MyNearWallet and HOT are only fallbacks) with
 | From a **second account**: **Buy YT → Buy** | The YT shows in that account's **Portfolio**; the seller receives the NEAR in the same transaction (check the explorer link) |
 | Lifecycle, on **`stnear-1d-01`**: buy its YT on **Buy YT** (a listing is open until 2026-11-19), then after **2026-11-17 06:00 UTC** open **Portfolio** with that series selected, **Enable stNEAR payouts** if asked, and **Redeem YT** | The hosted keeper records R0 at the cutoff (2026-11-16 06:00 UTC) and RT at maturity, usually within 10 minutes; both show under **Docs → Rates**. Redemption pays stNEAR (YT pays 0 while the testnet stNEAR rate is flat, PT pays 1 stNEAR per unit). **Capture baseline** / **Request settlement** buttons appear in Portfolio if the keeper has not run yet |
 
+### D. From any chain (NEAR Intents, no wallet needed for the preview)
+
+| Do | See |
+| --- | --- |
+| Open **From any chain** in the sidebar (`/any-chain`) | Three tabs: **Deposit** (any asset → PT + YT), **Buy YT** (pay from any chain), **Cash out** (stNEAR → any chain) |
+| **Deposit**: pick a chain and asset (e.g. Arbitrum · USDC), enter 25 | A live 1Click quote: stNEAR out, the PT + YT you would mint after the series fee, worst case at 1 % slippage, time estimate |
+| **Buy YT**: pick a listing, then pay with e.g. Bitcoin · BTC | The exact BTC amount that buys that much YT, including the market fee, YT registration and gas |
+| **Cash out**: enter 2 stNEAR, receive Solana · USDC | What arrives on Solana for your stNEAR |
+
+On the testnet demo these are **dry quotes against mainnet liquidity**: nothing is reserved or sent, and the send buttons read
+"mainnet only", because NEAR Intents settles on mainnet only (Q-007). The mainnet build (`npm run build:mainnet`) turns them on.
+
 ### C. Verify on-chain
 
 ```sh
@@ -145,7 +158,9 @@ Or browse the accounts on [NearBlocks testnet](https://testnet.nearblocks.io/add
 - Permissionless lifecycle: `capture_baseline` and `request_settlement`, rates read from Meta Pool via cross-contract calls
 - Burn-then-pay redemption; a failed stNEAR transfer restores the burned claim
 - Narrow admin: pause blocks deposits, listings and fills only; deposit fees are withdrawable, user collateral is not
-- 40 unit tests (`contracts/series/src/tests.rs`)
+- Deposits can name a receiver (`msg: {"receiver_id": …}`) and a series can carry a deposit cap; both exist for the NEAR
+  Intents flows
+- 47 unit tests (`contracts/series/src/tests.rs`)
 
 **App (React)**
 - Landing page with live protocol metrics, multi-series simulator and series ladder
@@ -160,6 +175,8 @@ Or browse the accounts on [NearBlocks testnet](https://testnet.nearblocks.io/add
 - Portfolio across all series: balances, **projected payout at maturity** (exact once settled), listings (cancel),
   baseline/settlement calls, exact redemption preview
 - In-app docs with live deployment data, contract reference and risks
+- **From any chain** (NEAR Intents 1Click): deposit from 25+ chains straight into PT + YT, buy YT with assets held on
+  another chain, and cash stNEAR out to any chain, with a step-by-step funds tracker (see below)
 - Demo mode with labelled simulated data when `VITE_NEAR_LIVE` is not `true`
 
 **Operations (Node scripts)**
@@ -178,8 +195,43 @@ Or browse the accounts on [NearBlocks testnet](https://testnet.nearblocks.io/add
   tenor ladder easy to deploy, inspect and retire.
 - **Cheap, fast finality.** Listings worth a few thousandths of a NEAR fill in one transaction, which keeps short 7-day series
   practical.
+- **NEAR Intents (1Click API).** Users on other chains reach YieldForge without a bridge UI: 1Click quotes the route, a
+  solver fills it on `intents.near`, and the stNEAR or NEAR is delivered on NEAR. For deposits, 1Click's `customRecipientMsg`
+  makes the delivery an `ft_transfer_call` into the series itself. Mainnet only.
 - **Wallets.** NEAR Wallet Selector: **Connect wallet** signs in with Meteor Wallet, with MyNearWallet and HOT as fallbacks if
   Meteor cannot load; users sign every transaction themselves.
+
+## From any chain (NEAR Intents)
+
+Staking yield on NEAR is easy to reach for people who already hold NEAR. The `/any-chain` page opens it to everyone else.
+It calls the [1Click API](https://docs.near-intents.org/near-intents/integration/distribution-channels/1click-api) straight from
+the browser (no backend, no API key; 1Click adds its 0.2 % fee, which every quote already includes).
+
+| Flow | What the user does | What happens |
+| --- | --- | --- |
+| **Deposit** | Sends e.g. 25 USDC on Arbitrum to a one-time deposit address | A solver swaps it to stNEAR. **Express:** NEAR Intents delivers it with `ft_transfer_call` to the series, with `msg` `{"receiver_id":"<user>.near"}`, and the series mints PT + YT to the user. No NEAR transaction needed. **Standard:** the stNEAR lands in the user's wallet and they sign the deposit. |
+| **Buy YT** | Picks a listing, sends BTC/ETH/SOL/USDC | An `EXACT_OUTPUT` quote delivers exactly the NEAR the purchase needs (price + 0.25 % fee + one-time YT registration + gas) as wNEAR; the app unwraps it (`near_withdraw`) and the user signs `buy`. |
+| **Cash out** | After redeeming, sends stNEAR to any chain | One NEAR transaction to `meta-pool.near`: `storage_deposit` for the deposit address, then `ft_transfer` to it. 1Click swaps and pays out on the destination chain; refunds come back to the NEAR wallet. |
+
+Every swap gets a **funds tracker**: quote → sent → swapping on NEAR Intents → arrived on NEAR → deposited / bought / delivered,
+polled from `/v0/status`, kept in the browser across reloads, with links to the origin transaction and the
+[NEAR Intents explorer](https://explorer.near-intents.org). A refund or failure says so plainly.
+
+**Safety rules in the app.**
+- Express is only offered when the series will certainly accept the stNEAR: deposits stay open at least two hours past three
+  times the quoted time estimate, the deposit cap has room for the quoted amount + 1 %, the worst-case output clears the
+  minimum, and the series is not paused. The check runs again on the real quote. Otherwise the app uses Standard, so a
+  refused delivery never depends on 1Click's refund path (1Click marks `customRecipientMsg` experimental).
+- Cash-outs use a plain `ft_transfer`, never `ft_transfer_call`, because the deposit address is an implicit account with no contract.
+- Mainnet series carry a **deposit cap** (`--cap`, required by `deploy-series.mjs` on mainnet) to limit exposure of unaudited code.
+
+**Honest caveats.** The fixed rate a YT sale locks in is a stNEAR-to-NEAR return. A user who arrives with USDC holds NEAR price
+exposure until they cash out; the page says so before anything is sent. Swaps cost the 1Click fee plus the solver spread and
+origin-chain gas.
+
+**Status.** The flows, the v3 contract (receiver message + cap) and the mainnet build are in this repository and tested
+(contract unit tests, `tests/intents-flows.test.mjs`, live dry quotes). The mainnet series are **not deployed yet**. Until they
+are, the testnet demo shows live dry quotes only.
 
 ## Deployed contracts (NEAR testnet)
 
@@ -204,10 +256,12 @@ Underlying: Meta Pool stNEAR, [`meta-v2.pool.testnet`](https://testnet.nearblock
 │   ├── src/pages/              # Landing, Docs, Deposit & sell (EarnPage), Buy YT, Listing, Portfolio, Series, …
 │   ├── src/hooks/              # Chain reads: useAllSeries, useSeriesDisplay, useLiveData, useTx
 │   ├── src/lib/                # NEAR config, rate-limited RPC client, transaction builders
+│   ├── src/lib/intents/        # NEAR Intents: 1Click client, quote/tx builders, funds-tracker state, swap history
 │   ├── tests/                  # Unit tests (node --test)
 │   ├── server.mjs              # Dependency-free production server (static files + SPA fallback)
 │   ├── keeper.mjs              # Keeper (Railway cron): capture_baseline / request_settlement when due
-│   └── .env.testnet            # Public testnet config (contract ids, RPC) for dev and build; no secrets
+│   ├── .env.testnet            # Public testnet config (contract ids, RPC) for dev and build; no secrets
+│   └── .env.mainnet            # Public mainnet config (build:mainnet); keys go in the git-ignored .env.mainnet.local
 ├── contracts/
 │   └── series/src/lib.rs       # Series contract: vault + YT (NEP-141) + PT ledger + YT market
 ├── scripts/                    # deploy-series, roll-series, create-keeper, keeper, e2e-testnet (testnet operations)
@@ -215,7 +269,7 @@ Underlying: Meta Pool stNEAR, [`meta-v2.pool.testnet`](https://testnet.nearblock
 └── PRD.md                      # Product requirements
 ```
 
-The frontend talks to the chain directly: view calls over JSON-RPC (deduplicated, at most four in flight, retried on transport
+The frontend talks to the chain and to the NEAR Intents 1Click API directly: view calls over JSON-RPC (deduplicated, at most four in flight, retried on transport
 errors) and transactions signed in the user's wallet. There is no backend and no database.
 
 ## Tech stack
@@ -223,7 +277,7 @@ errors) and transactions signed in the user's wallet. There is no backend and no
 | Layer | Technology |
 | --- | --- |
 | Smart contract | Rust, `near-sdk` 5.27, `near-contract-standards` 5.27 (NEP-141/145/148), `uint` (U256 math), binaryen `wasm-opt` |
-| Chain | NEAR Protocol testnet, Meta Pool stNEAR, NearBlocks API v3 (account activity), FastNEAR archival RPC (stNEAR APR, read-only mainnet reads) |
+| Chain | NEAR Protocol testnet (mainnet build ready), Meta Pool stNEAR, NEAR Intents 1Click API, NearBlocks API v3 (account activity), FastNEAR archival RPC (stNEAR APR, read-only mainnet reads) |
 | Frontend | React 19, TypeScript 5.7, Vite 6, React Router 7, lucide-react |
 | NEAR client | near-api-js 5, NEAR Wallet Selector 10 (MyNearWallet, Meteor, HOT) |
 | Scripts | Node.js, near-api-js |
@@ -252,10 +306,22 @@ npm start            # serve dist/ on $PORT (default 3000), as on Railway
 ```sh
 cd contracts
 cargo test -p yieldforge-series        # 40 unit tests
-bash ../scripts/build-contract.sh      # tests + wasm build + wasm-opt → target/yieldforge_series_v2.wasm
+bash ../scripts/build-contract.sh      # tests + wasm build + wasm-opt → target/yieldforge_series_v3.wasm
 ```
 
 Toolchain notes (why `--cfg near`, pinned near-sdk 5.27, rustup first in `PATH`) are in [`contracts/README.md`](contracts/README.md).
+
+### Deploy and operate series (mainnet)
+
+The same scripts run on mainnet with `NEAR_NETWORK=mainnet`. They then read keys from `yieldforge/.env.mainnet.local`
+(git-ignored), talk to `meta-pool.near` over FastNEAR, and write the series list to `yieldforge/.env.mainnet`. A series costs
+about 3.1 NEAR of storage (the v3 wasm is 292 KB). `--cap` is required on mainnet.
+
+```sh
+bash scripts/build-contract.sh   # contracts/target/yieldforge_series_v3.wasm
+NEAR_NETWORK=mainnet node scripts/roll-series.mjs --tenor 30 --cap 50 --dry-run   # drop --dry-run to deploy
+npm --prefix yieldforge run build:mainnet
+```
 
 ### Deploy and operate series (testnet)
 
@@ -288,6 +354,9 @@ clone runs against the deployed contracts with no setup. Leave `VITE_NEAR_LIVE` 
 | `VITE_STNEAR_CONTRACT` | Meta Pool stNEAR contract |
 | `VITE_NEAR_NODE_URL` | JSON-RPC endpoint |
 
+Mainnet values live in [`yieldforge/.env.mainnet`](yieldforge/.env.mainnet), loaded by `npm run dev:mainnet` and
+`npm run build:mainnet`. The **From any chain** page sends real swaps only in a live mainnet build; anywhere else it shows dry quotes.
+
 Deploy keys (`NEAR_ACCOUNT`, `NEAR_PRIVATE_KEY`) are only for the scripts. Keep them in `yieldforge/.env`; never prefix them with
 `VITE_` and never commit them.
 
@@ -307,7 +376,9 @@ Deploy keys (`NEAR_ACCOUNT`, `NEAR_PRIVATE_KEY`) are only for the scripts. Keep 
 
 - **Event:** [NEAR HACKATHON](https://nearhackathon.com), November 2026.
 - **Track:** Unstoppable DeFi (`defi`).
-- **Network:** NEAR testnet only, which the rules allow for every track (Q-010).
+- **Network:** the protocol runs on NEAR testnet, which the rules allow for every track (Q-010). The NEAR Intents flows need
+  mainnet (Q-007); their mainnet deployment is pending (see [From any chain](#from-any-chain-near-intents)), and on testnet they
+  show live dry quotes.
 - **Timeline:** the project was created for the hackathon and its repository history starts within the hackathon window. There is
   no pre-existing product on another chain (Q-001, Q-002).
 - **Third-party code (Q-005):** the libraries listed under [Tech stack](#tech-stack). Meta Pool stNEAR is an external protocol this

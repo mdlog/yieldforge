@@ -9,7 +9,7 @@
 import fs from 'fs'
 import path from 'path'
 import { execFileSync } from 'child_process'
-import { ROOT, accountExists, fmt, loadEnv, nearBalance, parse, view } from './near-lib.mjs'
+import { APP_ENV_FILE, ROOT, SECRET_ENV_FILE, accountExists, fmt, loadEnv, nearBalance, parse, view } from './near-lib.mjs'
 
 function arg(name, fallback) {
   const i = process.argv.indexOf(`--${name}`)
@@ -57,13 +57,13 @@ const name = `stnear-${tenor}d-${String(seq).padStart(2, '0')}`
 const accountId = `${name}.${parent}`
 
 console.log(`next: ${accountId} · deposits ${dryRun ? 'would open' : 'open'} now until ${iso(cutoff)} · maturity ${iso(maturity)} · deposit fee ${feeBps} bps`)
-console.log(`deployer ${parent}: ${fmt(await nearBalance(parent), 3)} NEAR (a series needs 2.85 NEAR plus fees)`)
+console.log(`deployer ${parent}: ${fmt(await nearBalance(parent), 3)} NEAR (a series needs about 3.1 NEAR plus fees)`)
 if (await accountExists(accountId)) throw new Error(`${accountId} already exists`)
 if (dryRun) process.exit(0)
 
 execFileSync(
   process.execPath,
-  [path.join(ROOT, 'scripts', 'deploy-series.mjs'), '--account', name, '--series-id', name, '--close', iso(cutoff), '--maturity', iso(maturity), '--fee-bps', String(feeBps)],
+  [path.join(ROOT, 'scripts', 'deploy-series.mjs'), '--account', name, '--series-id', name, '--close', iso(cutoff), '--maturity', iso(maturity), '--fee-bps', String(feeBps), ...(process.argv.includes('--cap') ? ['--cap', process.argv[process.argv.indexOf('--cap') + 1]] : [])],
   { stdio: 'inherit' },
 )
 
@@ -72,15 +72,16 @@ const ordered = [...listed]
 const firstSameTenor = ordered.findIndex((id) => pattern.test(id))
 ordered.splice(firstSameTenor === -1 ? ordered.length : firstSameTenor, 0, accountId)
 const line = `VITE_SERIES_CONTRACTS=${ordered.join(',')}`
-// .env.testnet (public, committed) holds the series list for dev, builds (Railway) and these scripts.
-// A local .env is only updated if it still carries its own copy of the list.
-for (const name of ['.env.testnet', '.env']) {
+// .env.<network> (public, committed) holds the series list for dev, builds (Railway) and these scripts.
+// The network's local secrets file (.env on testnet, .env.mainnet.local on mainnet) is only updated if it still
+// carries its own copy of the list; the other network's files are never touched.
+for (const name of [APP_ENV_FILE, SECRET_ENV_FILE]) {
   const envFile = path.join(ROOT, 'yieldforge', name)
   if (!fs.existsSync(envFile)) continue
   const text = fs.readFileSync(envFile, 'utf8')
   const has = /^VITE_SERIES_CONTRACTS=.*$/m.test(text)
-  if (!has && name === '.env') continue
+  if (!has && name === SECRET_ENV_FILE) continue
   fs.writeFileSync(envFile, has ? text.replace(/^VITE_SERIES_CONTRACTS=.*$/m, line) : `${text.trimEnd()}\n${line}\n`)
   console.log(`updated yieldforge/${name}: ${line}`)
 }
-console.log('Commit and push yieldforge/.env.testnet so the app (and Railway) lists it.')
+console.log(`Commit and push yieldforge/${APP_ENV_FILE} so the app (and Railway) lists it.`)

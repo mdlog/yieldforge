@@ -31,6 +31,8 @@ export function normalizeSeries(raw: RawView): SeriesView {
     feeBalance: pickOptional(raw, 'feeBalance', 'fee_balance'),
     ptPayoutPerUnit: pickOptional(raw, 'ptPayoutPerUnit', 'pt_payout_per_unit'),
     ytPayoutPerUnit: pickOptional(raw, 'ytPayoutPerUnit', 'yt_payout_per_unit'),
+    depositCap: pickOptional(raw, 'depositCap', 'deposit_cap'),
+    depositCapRemaining: pickOptional(raw, 'depositCapRemaining', 'deposit_cap_remaining'),
   }
 }
 

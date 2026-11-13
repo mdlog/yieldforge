@@ -13,6 +13,7 @@ function pageLabel(pathname: string): string {
   if (pathname.startsWith('/earn')) return 'Deposit & sell'
   if (pathname.startsWith('/series')) return 'Series'
   if (pathname.startsWith('/portfolio')) return 'Portfolio'
+  if (pathname.startsWith('/any-chain')) return 'From any chain'
   if (pathname.startsWith('/listing')) return 'Buy YT'
   if (pathname.startsWith('/calculator')) return 'Calculator'
   if (pathname.startsWith('/transactions')) return 'Activity'

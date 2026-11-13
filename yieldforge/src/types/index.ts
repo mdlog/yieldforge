@@ -115,6 +115,9 @@ export interface SeriesView {
   /** stNEAR paid per 1e24 units once settled. */
   ptPayoutPerUnit?: string
   ytPayoutPerUnit?: string
+  /** v3: most stNEAR the series accepts in total, and what is left of it. Absent = no cap. */
+  depositCap?: string
+  depositCapRemaining?: string
 }
 
 export type ListingViewStatus = 'OPEN' | 'PARTIALLY_FILLED' | 'FILLED' | 'CANCELLED' | 'EXPIRED'

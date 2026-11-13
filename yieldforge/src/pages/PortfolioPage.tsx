@@ -452,7 +452,13 @@ export default function PortfolioPage() {
                         )}
                       </>
                     )}
-                    <TxFeedback tx={redeemTx} failedTitle="Redemption failed" successTitle="Redemption confirmed on-chain" successBody="Claims burned and stNEAR sent to your wallet." />
+                    <TxFeedback tx={redeemTx} failedTitle="Redemption failed" successTitle="Redemption confirmed on-chain" successBody="Claims burned and stNEAR sent to your wallet."
+                      successAction={
+                        <button onClick={() => navigate('/any-chain?tab=cash-out')}>
+                          Cash out to another chain <ArrowRight size={14} aria-hidden />
+                        </button>
+                      }
+                    />
                     {redeemTx.phase === 'idle' && !needsPayoutStorage && (
                       <div className="position-card-foot">
                         <span>{pt + yt > 0n ? 'Each claim unit can be redeemed once.' : 'Nothing left to redeem.'}</span>

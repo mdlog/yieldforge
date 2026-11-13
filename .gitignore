@@ -12,6 +12,7 @@ yieldforge/dist-prev/
 !.env.example
 # Public VITE_* testnet config; checked into the repo on purpose (no secrets).
 !yieldforge/.env.testnet
+!yieldforge/.env.mainnet
 *.pem
 *.key
 .near-credentials/
