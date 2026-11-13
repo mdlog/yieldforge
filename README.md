@@ -313,6 +313,9 @@ Deploy keys (`NEAR_ACCOUNT`, `NEAR_PRIVATE_KEY`) are only for the scripts. Keep 
 - **Third-party code (Q-005):** the libraries listed under [Tech stack](#tech-stack). Meta Pool stNEAR is an external protocol this
   project builds on, not part of this repository. Parts of the code and documentation were written with AI coding assistants and
   reviewed by the team. The NEAR, Meta Pool and wallet logos belong to their owners and only identify those projects in the UI.
+- **Other submission by the same person (Q-015):** [Veiled Markets](https://github.com/hevDev7/veiled-markets-near) (live at
+  https://veiledmarkets.xyz), a prediction market on NEAR where positions are private. The two projects are independent: they
+  share no code, contracts or accounts.
 - **Live demo:** https://yieldforge.mdloglabs.org, kept online through judging.
 - **Demo video:** https://youtu.be/7dZhm4mILFo
 
