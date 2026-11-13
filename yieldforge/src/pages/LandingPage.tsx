@@ -40,7 +40,7 @@ import { bySchedule, tenorLabel, useAllSeries, type SeriesSnapshot } from '@/hoo
 import type { SeriesDisplay, SeriesPhase } from '@/hooks/useSeriesDisplay'
 import { useStakingApr } from '@/hooks/useStakingApr'
 import { formatYocto, yoctoToNumber } from '@/utils/format'
-import { filledVolumeYocto, formatBps, MARKET_FEE_BPS } from '@/utils/math'
+import { breakEvenApr as breakEvenAprFor, fairYtPrice, filledVolumeYocto, formatBps, lockedApr, MARKET_FEE_BPS } from '@/utils/math'
 import '@/styles/landing.css'
 
 type Icon = ComponentType<{ size?: number; strokeWidth?: number; 'aria-hidden'?: boolean }>
@@ -182,13 +182,15 @@ export default function LandingPage() {
       .map((r) => ({ d: r.display, days: Math.max(0, (r.display.maturityMs! - Math.max(now, r.display.cutoffMs ?? 0)) / DAY_MS) }))
       .sort((a, b) => b.days - a.days)[0]
     if (!best || best.days <= 0) return null
-    const r0 = best.d.baselineRate ?? best.d.currentRate!
+    const rateNow = best.d.currentRate!
+    const r0 = best.d.baselineRate ?? rateNow
     const fee = Number(best.d.depositFeeBps) / 10_000
-    const fair = r0 * (staking.aprPercent / 100) * (best.days / 365)
+    const fair = fairYtPrice(r0, staking.aprPercent, best.days, rateNow)
     return {
       tenor: tenorLabel(best.d),
-      // Deposit 1 stNEAR, sell the YT at the fair price, keep the PT: the fixed return, annualized.
-      fixedApr: ((1 - fee) * (1 + fair / r0) - 1) * (365 / best.days) * 100,
+      // Deposit 1 stNEAR, sell the YT at the fair price, keep the PT: the fixed return over the term, annualized,
+      // net of the deposit fee.
+      fixedApr: lockedApr(fair, r0, best.d.termDays ?? Math.round(best.days), best.d.depositFeeBps) ?? 0,
       upfront: 100 * (1 - fee) * fair,
       exposure: fair > 0 ? r0 / fair : null,
     }
@@ -228,7 +230,7 @@ export default function LandingPage() {
                   )}
                   <em>APR</em>
                 </strong>
-                <small>{terms ? `≈ ${fixed(terms.upfront, 2)} NEAR paid upfront per 100 stNEAR · ${terms.tenor}, after fees` : 'Paid upfront, after fees'}</small>
+                <small>{terms ? `≈ ${fixed(terms.upfront, 2)} NEAR paid upfront per 100 stNEAR · ${terms.tenor}, after fees, in NEAR terms` : 'Paid upfront, after fees'}</small>
                 <span className="lp-path-cta">
                   Deposit &amp; sell <ArrowRight size={13} aria-hidden />
                 </span>
@@ -782,11 +784,13 @@ function SimulatorBody({ r0, baselineCaptured, series }: { r0: number | null; ba
   const apr = aprPicked ?? Math.round(staking.aprPercent * 10) / 10
   const [price, setPrice] = useState('')
 
-  const termDays = useMemo(() => {
+  // Days of yield still to accrue (from now or the cutoff, whichever is later) and the whole term.
+  const daysLeft = useMemo(() => {
     if (!series?.maturityMs) return 90
     const start = Math.max(Date.now(), series.cutoffMs ?? Date.now())
     return Math.max(1, Math.round((series.maturityMs - start) / DAY_MS))
   }, [series?.maturityMs, series?.cutoffMs])
+  const termDays = series?.termDays ?? daysLeft
 
   const result = useMemo(() => {
     const amountIn = Number(deposit)
@@ -794,8 +798,10 @@ function SimulatorBody({ r0, baselineCaptured, series }: { r0: number | null; ba
     const depositFee = Number(series.depositFeeBps) / 10_000
     const marketFee = Number(series.marketFeeBps) / 10_000
     const minted = amountIn * (1 - depositFee)
-    const growth = (apr / 100) * (termDays / 365)
-    const fair = r0 * growth
+    const rateNow = series.currentRate ?? r0
+    // RT if the rate keeps growing at the chosen APR; YT pays RT − R0 (already-earned yield included).
+    const rt = rateNow * (1 + (apr / 100) * (daysLeft / 365))
+    const fair = fairYtPrice(r0, apr, daysLeft, rateNow)
     const parsed = Number(price)
     const unit = price.trim() !== '' && Number.isFinite(parsed) && parsed >= 0 ? parsed : fair
     const principalNear = amountIn * r0
@@ -806,9 +812,9 @@ function SimulatorBody({ r0, baselineCaptured, series }: { r0: number | null; ba
     const sellerReturn = sellerTotal / principalNear - 1
 
     const cost = minted * unit * (1 + marketFee)
-    const payout = minted * r0 * growth
+    const payout = minted * Math.max(rt - r0, 0)
     const pnl = payout - cost
-    const breakEvenApr = r0 > 0 ? ((unit * (1 + marketFee)) / r0) * (365 / termDays) * 100 : null
+    const breakEvenApr = breakEvenAprFor(unit, series.marketFeeBps, r0, daysLeft, rateNow)
 
     return {
       minted,
@@ -826,7 +832,7 @@ function SimulatorBody({ r0, baselineCaptured, series }: { r0: number | null; ba
       leverage: cost > 0 ? ptValue / cost : null,
       breakEvenApr,
     }
-  }, [deposit, apr, price, termDays, series, r0])
+  }, [deposit, apr, price, daysLeft, termDays, series, r0])
 
   return (
     <div className="lp-sim">
@@ -880,7 +886,9 @@ function SimulatorBody({ r0, baselineCaptured, series }: { r0: number | null; ba
           </div>
           <div>
             <dt>Term</dt>
-            <dd>{termDays} days</dd>
+            <dd>
+              {termDays} days{daysLeft < termDays ? ` · ${daysLeft} left` : ''}
+            </dd>
           </div>
           <div>
             <dt>You mint</dt>
@@ -897,7 +905,7 @@ function SimulatorBody({ r0, baselineCaptured, series }: { r0: number | null; ba
             <SimRow label="NEAR received now" value={result ? `${amount(result.proceeds)} NEAR` : '—'} />
             <SimRow label="PT value at maturity" value={result ? `${amount(result.ptValue)} NEAR` : '—'} />
             <SimRow label="Total vs. principal" value={result ? `${signed(result.sellerReturn * 100)}%` : '—'} strong />
-            <SimRow label="Fixed APR" value={result ? `${fixed(result.sellerApr * 100, 2)}%` : '—'} />
+            <SimRow label="Fixed APR, after fee" value={result ? `${fixed(result.sellerApr * 100, 2)}%` : '—'} />
           </dl>
         </article>
         <article className="lp-sim-card lp-sim-card-dark">
@@ -917,7 +925,8 @@ function SimulatorBody({ r0, baselineCaptured, series }: { r0: number | null; ba
           </dl>
         </article>
         <p className="lp-sim-note">
-          Illustrative only. Assumes the rate grows at the APR you set and stays above R0; payouts are made in stNEAR and shown here in NEAR at RT. Not a forecast.
+          Illustrative only. Assumes the rate grows at the APR you set and stays above R0; payouts are made in stNEAR and shown here in NEAR at RT. The fixed APR is fixed in NEAR, not
+          in dollars, and is net of the {series ? formatBps(series.depositFeeBps) : ''} deposit fee. Not a forecast.
         </p>
       </div>
     </div>

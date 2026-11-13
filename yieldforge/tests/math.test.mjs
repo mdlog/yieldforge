@@ -38,18 +38,28 @@ describe('deposit preview', () => {
 });
 
 describe('illustrative scenarios', () => {
-  it('pays nothing at or below the baseline and shows a negative buyer delta', () => {
-    const rows = buildScenarioRows(1.15, 10, 2);
-    const unchanged = rows.find((r) => r.tone === 'muted');
-    const falling = rows.find((r) => r.tone === 'risk');
-    assert.equal(unchanged.yield, 0);
-    assert.equal(falling.yield, 0);
-    assert.equal(falling.buyerPayoff, -2);
+  const base = { r0: 1.2, rateNow: 1.2, aprPercent: 6, daysLeft: 365, ytQuantity: 10, costNear: 0.5 };
+
+  it('moves the staking APR one point either way instead of jumping the rate by 2-5%', () => {
+    const rows = buildScenarioRows(base);
+    assert.deepEqual(rows.map((r) => r.label), ['Staking APR 5.0%', 'Staking APR 6.0% (today)', 'Staking APR 7.0%', 'Rate falls 1%']);
+    const today = rows[1];
+    assert.ok(Math.abs(today.rate - 1.272) < 1e-9); // 1.2 × (1 + 6% × 1 year)
+    assert.ok(Math.abs(today.yield - 0.72) < 1e-9); // (1.272 − 1.2) × 10
+    assert.ok(Math.abs(today.buyerPayoff - 0.22) < 1e-9);
   });
 
-  it('scales the payout with rate appreciation and quantity', () => {
-    const plus5 = buildScenarioRows(1.2, 10, 0).find((r) => r.label === 'Illustrative +5%');
-    assert.ok(Math.abs(plus5.yield - 0.6) < 1e-9); // (1.26 - 1.2) × 10
+  it('pays nothing when the rate falls below R0, and the buyer loses the cost', () => {
+    const falling = buildScenarioRows(base).find((r) => r.tone === 'risk');
+    assert.equal(falling.yield, 0);
+    assert.equal(falling.buyerPayoff, -0.5);
+  });
+
+  it('counts yield already accrued since the cutoff', () => {
+    // R0 1.2, rate already 1.23: even at 0% APR from here the YT pays 0.03 per unit.
+    const rows = buildScenarioRows({ ...base, rateNow: 1.23, aprPercent: 1, daysLeft: 0 });
+    assert.ok(Math.abs(rows[0].yield - 0.3) < 1e-9);
+    assert.equal(rows[0].label, 'Staking APR 0.0%');
   });
 });
 
@@ -109,9 +119,17 @@ describe('listing expiry options are capped at maturity', () => {
 });
 
 describe('YT pricing helpers', () => {
-  it('prices one YT at R0 × APR × days / 365', () => {
+  it('prices one YT at R0 × APR × days / 365 before the cutoff', () => {
     assert.ok(Math.abs(fairYtPrice(3.198752, 7, 7) - 0.0042942) < 1e-6);
     assert.equal(fairYtPrice(3.2, 7, -5), 0);
+  });
+
+  it('adds the yield already accrued since the cutoff and projects the rest from today\'s rate', () => {
+    // R0 3.2, rate now 3.21: 0.01 is already earned; 30 more days at 5% on 3.21.
+    const p = fairYtPrice(3.2, 5, 30, 3.21);
+    assert.ok(Math.abs(p - (0.01 + 3.21 * 0.05 * 30 / 365)) < 1e-12);
+    // A rate below R0 has earned nothing yet, but the future yield still counts.
+    assert.ok(Math.abs(fairYtPrice(3.2, 5, 30, 3.19) - 3.19 * 0.05 * 30 / 365) < 1e-12);
   });
 
   it('turns a price back into the break-even APR, fee included', () => {
@@ -119,15 +137,31 @@ describe('YT pricing helpers', () => {
     assert.ok(apr !== null && Math.abs(apr - 7.027) < 0.01);
     assert.equal(breakEvenApr(0.0043, 25n, 3.2, 0), null);
   });
+
+  it('subtracts the accrued yield from what the remaining days must earn', () => {
+    const price = fairYtPrice(3.2, 5, 30, 3.21);
+    assert.ok(Math.abs(breakEvenApr(price, 0n, 3.2, 30, 3.21) - 5) < 1e-9);
+    // A price below the yield already earned pays back at any APR.
+    assert.equal(breakEvenApr(0.005, 25n, 3.2, 30, 3.21), 0);
+  });
 });
 
 describe('seller and holder views', () => {
-  it('turns a YT price into the APR the seller locks in (fair price round-trips)', () => {
+  it('turns a YT price into the APR the seller locks in over the term (fair price round-trips)', () => {
     const price = fairYtPrice(3.2, 4, 30);
     assert.ok(Math.abs(lockedApr(price, 3.2, 30) - 4) < 1e-9);
     assert.equal(lockedApr(0.01, 3.2, 0), null);
     // The buyer needs a little more than the seller locks in: the market fee.
     assert.ok(breakEvenApr(price, 25n, 3.2, 30) > lockedApr(price, 3.2, 30));
+  });
+
+  it('nets the deposit fee out of the APR the seller locks in', () => {
+    const price = fairYtPrice(3.2, 4, 30);
+    // Fee 0.25% on a 30-day term: (1 − f)(1 + p/R0) − 1, annualised.
+    const net = lockedApr(price, 3.2, 30, 25n);
+    const expected = ((1 - 0.0025) * (1 + price / 3.2) - 1) * (365 / 30) * 100;
+    assert.ok(Math.abs(net - expected) < 1e-9);
+    assert.ok(net < 1, 'a 0.25% fee eats most of a 30-day 4% yield');
   });
 
   it('projects PT and YT from the current rate before settlement', () => {

@@ -33,6 +33,7 @@ export function normalizeSeries(raw: RawView): SeriesView {
     ytPayoutPerUnit: pickOptional(raw, 'ytPayoutPerUnit', 'yt_payout_per_unit'),
     depositCap: pickOptional(raw, 'depositCap', 'deposit_cap'),
     depositCapRemaining: pickOptional(raw, 'depositCapRemaining', 'deposit_cap_remaining'),
+    refundsPending: pickOptional(raw, 'refundsPending', 'refunds_pending'),
   }
 }
 
@@ -113,4 +114,21 @@ export function buildRedeemTx(params: { amountYocto: string; isPt: boolean }): T
     receiverId: cfg.seriesContractId,
     actions: [functionCall(params.isPt ? 'redeem_pt' : 'redeem_yt', { amount: params.amountYocto }, tgas(50), ONE_YOCTO)],
   }
+}
+
+/**
+ * stNEAR the series holds for `accountId` from routed deposits (NEAR Intents Express) it could not accept:
+ * closed, paused, over the cap or under the minimum. "0" on series without refunds (v2) or with none held.
+ */
+export async function fetchRefund(accountId: string, contractId = getNearConfig().seriesContractId): Promise<string> {
+  try {
+    return await viewCall<string>(contractId, 'get_refund', { account_id: accountId })
+  } catch {
+    return '0'
+  }
+}
+
+/** Withdraw a held refund to the caller's stNEAR wallet. The caller must be registered on stNEAR. */
+export function buildClaimRefundTx(contractId = getNearConfig().seriesContractId): TxRequest {
+  return { receiverId: contractId, actions: [functionCall('claim_refund', {}, tgas(60), ONE_YOCTO)] }
 }

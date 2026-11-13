@@ -50,7 +50,7 @@ export default function MarketplacePage() {
       const buyable = d.phase === 'Paused' ? [] : row.listings.filter(isBuyable)
       const listings = live ? buyable.map(toUiListing) : demoListings.filter((l) => l.status === 'Open' || l.status === 'Partial')
       for (const listing of listings) {
-        out.push({ contractId: row.contractId, series: d, listing, breakEven: r0 ? breakEvenApr(unitPrice(listing), d.marketFeeBps ?? MARKET_FEE_BPS, r0, yieldDaysLeft(d)) : null })
+        out.push({ contractId: row.contractId, series: d, listing, breakEven: r0 ? breakEvenApr(unitPrice(listing), d.marketFeeBps ?? MARKET_FEE_BPS, r0, yieldDaysLeft(d), d.currentRate ?? r0) : null })
       }
     }
     return out

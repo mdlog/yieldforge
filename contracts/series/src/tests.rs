@@ -60,7 +60,7 @@ fn callback(ts: u64, result: PromiseResult) {
 
 fn setup() -> Contract {
     call(owner(), 0, 0);
-    Contract::new(owner(), "stnear-90d-02".into(), stnear(), U64(CLOSE), U64(MATURITY), None, None, None)
+    Contract::new(owner(), "stnear-90d-02".into(), stnear(), U64(CLOSE), U64(MATURITY), None, None, None, None)
 }
 
 fn deposit(c: &mut Contract, who: AccountId, amount: u128) {
@@ -564,7 +564,7 @@ fn deposit_msg_with_an_invalid_account_is_refused() {
 
 fn setup_capped(cap: u128) -> Contract {
     call(owner(), 0, 0);
-    Contract::new(owner(), "stnear-30d-01".into(), stnear(), U64(CLOSE), U64(MATURITY), None, None, Some(U128(cap)))
+    Contract::new(owner(), "stnear-30d-01".into(), stnear(), U64(CLOSE), U64(MATURITY), None, None, Some(U128(cap)), None)
 }
 
 #[test]
@@ -591,4 +591,191 @@ fn uncapped_series_reports_no_cap() {
     let c = setup();
     assert_eq!(c.get_series().deposit_cap, None);
     assert_eq!(c.get_series().deposit_cap_remaining, None);
+}
+
+// ---- Pre-mainnet hardening (audit 13 Nov 2026) ------------------------------------------------
+
+fn intents() -> AccountId {
+    acct("intents.near")
+}
+
+fn routed(c: &mut Contract, ts: u64, receiver: &AccountId, amount: u128) -> U128 {
+    call(stnear(), ts, 0);
+    match c.ft_on_transfer(intents(), U128(amount), format!(r#"{{"receiver_id":"{receiver}"}}"#)) {
+        PromiseOrValue::Value(v) => v,
+        PromiseOrValue::Promise(_) => panic!("ft_on_transfer must not return a promise"),
+    }
+}
+
+#[test]
+fn a_routed_deposit_after_the_cutoff_is_kept_for_the_receiver_not_bounced_to_the_router() {
+    let mut c = setup();
+    assert_eq!(routed(&mut c, CLOSE, &alice(), ONE).0, 0, "accepted: nothing goes back to intents.near");
+    assert_eq!(c.get_refund(alice()).0, ONE);
+    assert!(c.get_position(alice()).is_none(), "no PT/YT minted");
+    let s = c.get_series();
+    assert_eq!(s.total_stnear_deposited.0, 0);
+    assert_eq!(s.refunds_pending.0, ONE);
+}
+
+#[test]
+fn routed_deposits_refused_for_cap_minimum_or_pause_become_refunds() {
+    let mut c = setup_capped(ONE);
+    routed(&mut c, 10, &alice(), ONE);
+    routed(&mut c, 10, &bob(), ONE / 2); // cap full
+    assert_eq!(c.get_refund(bob()).0, ONE / 2);
+    assert_eq!(c.get_series().refunds_pending.0, ONE / 2);
+    assert_eq!(c.get_series().total_stnear_deposited.0, ONE);
+}
+
+#[test]
+#[should_panic(expected = "Below minimum deposit")]
+fn routed_dust_below_the_absolute_floor_is_refused_not_held() {
+    // Holding 1-yocto refunds for arbitrary receivers would let anyone spend the series' storage.
+    let mut c = setup();
+    routed(&mut c, 10, &carol(), MIN_DEPOSIT - 1);
+}
+
+#[test]
+fn a_routed_deposit_while_paused_becomes_a_refund() {
+    let mut c = setup();
+    call(owner(), 11, 0);
+    c.pause();
+    routed(&mut c, 12, &alice(), ONE);
+    assert_eq!(c.get_refund(alice()).0, ONE);
+}
+
+#[test]
+#[should_panic(expected = "Deposits closed")]
+fn an_unrouted_deposit_is_still_refused_by_panicking() {
+    let mut c = setup();
+    deposit_msg(&mut c, alice(), ONE, "");
+    call(stnear(), CLOSE, 0);
+    let _ = c.ft_on_transfer(alice(), U128(ONE), String::new());
+}
+
+#[test]
+fn a_refund_is_claimed_once_and_restored_if_the_transfer_fails() {
+    let mut c = setup();
+    routed(&mut c, CLOSE, &alice(), ONE);
+    call(alice(), CLOSE + 1, 1);
+    let _ = c.claim_refund();
+    assert_eq!(c.get_refund(alice()).0, 0);
+    assert_eq!(c.get_series().refunds_pending.0, 0);
+    callback(CLOSE + 2, PromiseResult::Failed);
+    assert!(!c.on_refund_claimed(alice(), U128(ONE)));
+    assert_eq!(c.get_refund(alice()).0, ONE, "claim restored");
+    assert_eq!(c.get_series().refunds_pending.0, ONE);
+    call(alice(), CLOSE + 3, 1);
+    let _ = c.claim_refund();
+    callback(CLOSE + 4, PromiseResult::Successful(vec![]));
+    assert!(c.on_refund_claimed(alice(), U128(ONE)));
+    assert_eq!(c.get_refund(alice()).0, 0);
+}
+
+#[test]
+#[should_panic(expected = "No refund")]
+fn claiming_without_a_refund_panics() {
+    let mut c = setup();
+    call(alice(), 10, 1);
+    let _ = c.claim_refund();
+}
+
+#[test]
+#[should_panic(expected = "Invalid receiver")]
+fn the_receiver_cannot_be_the_series_itself() {
+    let mut c = setup();
+    routed(&mut c, 10, &me(), ONE);
+}
+
+#[test]
+#[should_panic(expected = "Invalid receiver")]
+fn the_receiver_cannot_be_the_stnear_contract() {
+    let mut c = setup();
+    routed(&mut c, 10, &stnear(), ONE);
+}
+
+#[test]
+fn the_minimum_deposit_is_set_per_series() {
+    call(owner(), 0, 0);
+    let mut c = Contract::new(owner(), "s".into(), stnear(), U64(CLOSE), U64(MATURITY), None, None, Some(U128(50 * ONE)), Some(U128(ONE)));
+    assert_eq!(c.get_series().min_deposit.0, ONE);
+    routed(&mut c, 10, &alice(), ONE / 2);
+    assert_eq!(c.get_refund(alice()).0, ONE / 2, "below the series minimum");
+    deposit(&mut c, bob(), ONE);
+    assert!(c.get_position(bob()).is_some());
+}
+
+#[test]
+#[should_panic(expected = "Minimum deposit below")]
+fn the_minimum_deposit_cannot_be_below_the_floor() {
+    call(owner(), 0, 0);
+    let _ = Contract::new(owner(), "s".into(), stnear(), U64(CLOSE), U64(MATURITY), None, None, None, Some(U128(MIN_DEPOSIT - 1)));
+}
+
+#[test]
+#[should_panic(expected = "Unregistering is disabled")]
+fn storage_unregister_is_disabled() {
+    let mut c = setup();
+    deposit(&mut c, alice(), ONE);
+    call(alice(), 20, 1);
+    let _ = c.storage_unregister(Some(true));
+}
+
+#[test]
+#[should_panic(expected = "for PT storage")]
+fn pt_transfer_to_a_new_holder_charges_its_storage() {
+    let mut c = setup();
+    deposit(&mut c, alice(), ONE);
+    call(carol(), 15, STORAGE);
+    let _ = c.storage_deposit(None, Some(true));
+    call(alice(), 20, 1);
+    c.pt_transfer(carol(), U128(1));
+}
+
+#[test]
+fn pt_transfer_with_storage_attached_works() {
+    let mut c = setup();
+    deposit(&mut c, alice(), ONE);
+    call(carol(), 15, STORAGE);
+    let _ = c.storage_deposit(None, Some(true));
+    call(alice(), 20, STORAGE);
+    c.pt_transfer(carol(), U128(1));
+    assert_eq!(c.pt_balance_of(carol()).0, 1);
+    call(alice(), 21, 1);
+    c.pt_transfer(carol(), U128(1)); // existing entry: no new storage
+    assert_eq!(c.pt_balance_of(carol()).0, 2);
+}
+
+#[test]
+#[should_panic(expected = "Expiry must be before maturity")]
+fn a_listing_cannot_outlive_the_series() {
+    let mut c = setup();
+    deposit(&mut c, alice(), ONE);
+    call(alice(), 20, STORAGE);
+    c.create_listing(U128(ONE / 2), U128(PRICE), U64(MATURITY + 1));
+}
+
+#[test]
+#[should_panic(expected = "Series matured")]
+fn nothing_can_be_bought_after_maturity() {
+    let mut c = setup();
+    deposit(&mut c, alice(), ONE);
+    call(alice(), 20, STORAGE);
+    let id = c.create_listing(U128(ONE / 2), U128(PRICE), U64(MATURITY)).0;
+    call(bob(), MATURITY, ONE);
+    c.buy(U64(id), U128(ONE / 4));
+}
+
+#[test]
+fn a_successful_payout_with_a_long_return_value_is_not_treated_as_failed() {
+    let mut c = setup();
+    deposit(&mut c, alice(), ONE);
+    settle(&mut c, rate(3.0), rate(3.3));
+    let pt = c.pt_balance_of(alice()).0;
+    call(alice(), MATURITY + 5, 1);
+    let _ = c.redeem_pt(U128(pt));
+    callback(MATURITY + 6, PromiseResult::Successful(vec![b'1'; 100]));
+    assert_ne!(c.on_payout(alice(), U128(pt), U128(1), Claim::Pt).0, 0);
+    assert_eq!(c.pt_balance_of(alice()).0, 0, "claim not restored: it was paid");
 }

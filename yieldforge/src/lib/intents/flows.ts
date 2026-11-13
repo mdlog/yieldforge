@@ -183,6 +183,8 @@ export function buildBuyYtQuoteRequest(p: {
 /** Flow 3: stNEAR in the NEAR wallet (e.g. from a redemption) → any asset on any chain. Refunds go back to the wallet. */
 export function buildCashOutQuoteRequest(p: {
   amountStNearYocto: bigint
+  /** stNEAR by default; wNEAR to cash out native NEAR (e.g. YT sale proceeds), wrapped first. */
+  originAsset?: string
   destinationAsset: string
   recipient: string
   accountId: string
@@ -194,7 +196,7 @@ export function buildCashOutQuoteRequest(p: {
     dry: p.dry,
     swapType: 'EXACT_INPUT',
     slippageTolerance: p.slippageBps ?? DEFAULT_SLIPPAGE_BPS,
-    originAsset: STNEAR_ASSET_ID,
+    originAsset: p.originAsset ?? STNEAR_ASSET_ID,
     depositType: 'ORIGIN_CHAIN',
     destinationAsset: p.destinationAsset,
     amount: p.amountStNearYocto.toString(),
@@ -247,6 +249,22 @@ export function buildCashOutTx(p: { stNearContractId: string; depositAddress: st
   }
 }
 
+/**
+ * Cash out native NEAR (YT sale proceeds are paid in NEAR): on wrap.near, register the wallet (refunded if it
+ * already is), wrap the amount, register the deposit address and transfer the wNEAR to it, in one transaction.
+ */
+export function buildCashOutNearTx(p: { wnearContractId: string; accountId: string; depositAddress: string; amountYocto: bigint; storageMinYocto: bigint }): TxRequest {
+  return {
+    receiverId: p.wnearContractId,
+    actions: [
+      call('storage_deposit', { account_id: p.accountId, registration_only: true }, 10, p.storageMinYocto.toString()),
+      call('near_deposit', {}, 10, p.amountYocto.toString()),
+      call('storage_deposit', { account_id: p.depositAddress, registration_only: true }, 10, p.storageMinYocto.toString()),
+      call('ft_transfer', { receiver_id: p.depositAddress, amount: p.amountYocto.toString(), memo: 'yieldforge cash-out via NEAR Intents' }, 15, '1'),
+    ],
+  }
+}
+
 /** Unwrap wNEAR into native NEAR (wrap.near near_withdraw). */
 export function buildUnwrapTx(p: { wnearContractId: string; amountYocto: bigint }): TxRequest {
   return { receiverId: p.wnearContractId, actions: [call('near_withdraw', { amount: p.amountYocto.toString() }, 10, '1')] }
@@ -264,6 +282,30 @@ export function buildUnwrapAndBuyPlan(p: { needYocto: bigint; nativeYocto: bigin
   const missing = want - p.nativeYocto
   if (p.wnearYocto >= missing) return { ok: true, unwrapYocto: missing }
   return { ok: false, shortfallYocto: missing - p.wnearYocto }
+}
+
+// Round trip ------------------------------------------------------------------
+
+export interface RoundTripEstimate {
+  /** Value lost on the way in (swap fees, spread), percent of what is sent. */
+  entryPct: number
+  /** Entry, the same again on the way out, plus the series deposit fee. */
+  roundTripPct: number
+  /** What the position earns over the term at today's staking APR, percent. */
+  termYieldPct: number
+  costsMoreThanYield: boolean
+}
+
+/**
+ * Rough cost of coming in from another chain and going back out, next to what the term earns. The way out is
+ * assumed to cost what the way in did; the deposit fee is charged once. Dollar prices come from 1Click's quote.
+ */
+export function roundTripEstimate(p: { usdIn: number; usdOut: number; depositFeeBps: bigint; aprPercent: number; termDays: number }): RoundTripEstimate | null {
+  if (!(p.usdIn > 0) || !(p.usdOut > 0)) return null
+  const entryPct = Math.max(0, (1 - p.usdOut / p.usdIn) * 100)
+  const roundTripPct = 2 * entryPct + Number(p.depositFeeBps) / 100
+  const termYieldPct = p.aprPercent * (Math.max(0, p.termDays) / 365)
+  return { entryPct, roundTripPct, termYieldPct, costsMoreThanYield: roundTripPct >= termYieldPct }
 }
 
 // Express safety -------------------------------------------------------------

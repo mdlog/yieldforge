@@ -6,6 +6,7 @@ import {
   asPreview,
   buildBuyYtQuoteRequest,
   buildCashOutQuoteRequest,
+  buildCashOutNearTx,
   buildCashOutTx,
   buildDepositQuoteRequest,
   buildUnwrapAndBuyPlan,
@@ -13,6 +14,7 @@ import {
   fromAtomic,
   looksLikeAddress,
   pruneSwaps,
+  roundTripEstimate,
   trackerState,
   toAtomic,
   upsertSwap,
@@ -213,5 +215,47 @@ describe('price-only previews', () => {
   it('keeps cash-out previews inside the intents ledger, since a foreign-chain recipient cannot be stood in for', () => {
     const req = buildCashOutQuoteRequest({ amountStNearYocto: 10n ** 24n, destinationAsset: USDC_ARB, recipient: '', accountId: 'alice.near', dry: false, now: NOW });
     assert.equal(asPreview(req).recipientType, 'INTENTS');
+  });
+});
+
+describe('cash out native NEAR (YT sale proceeds)', () => {
+  const dep = 'a'.repeat(64);
+  it('quotes from wNEAR', () => {
+    const req = buildCashOutQuoteRequest({ amountStNearYocto: 10n ** 24n, originAsset: WNEAR_ASSET_ID, destinationAsset: USDC_ARB, recipient: EVM, accountId: 'alice.near', dry: false, now: NOW });
+    assert.equal(req.originAsset, WNEAR_ASSET_ID);
+    assert.equal(req.refundTo, 'alice.near');
+  });
+  it('wraps, registers both accounts on wrap.near and transfers in one transaction', () => {
+    const min = 1_250_000_000_000_000_000_000n;
+    const tx = buildCashOutNearTx({ wnearContractId: 'wrap.near', accountId: 'alice.near', depositAddress: dep, amountYocto: 3n * 10n ** 24n, storageMinYocto: min });
+    assert.equal(tx.receiverId, 'wrap.near');
+    const [selfReg, wrap, depReg, transfer] = tx.actions.map((a) => a.params);
+    assert.deepEqual([selfReg.methodName, wrap.methodName, depReg.methodName, transfer.methodName], ['storage_deposit', 'near_deposit', 'storage_deposit', 'ft_transfer']);
+    assert.deepEqual(selfReg.args, { account_id: 'alice.near', registration_only: true });
+    assert.equal(selfReg.deposit, min.toString());
+    assert.equal(wrap.deposit, (3n * 10n ** 24n).toString());
+    assert.deepEqual(depReg.args, { account_id: dep, registration_only: true });
+    assert.equal(transfer.args.receiver_id, dep);
+    assert.equal(transfer.args.amount, (3n * 10n ** 24n).toString());
+    assert.equal(transfer.deposit, '1');
+    const gas = tx.actions.reduce((g, a) => g + BigInt(a.params.gas), 0n);
+    assert.ok(gas <= 300n * 10n ** 12n);
+  });
+});
+
+describe('round-trip cost against what the term earns', () => {
+  it('doubles the entry cost for the way out and adds the deposit fee', () => {
+    const e = roundTripEstimate({ usdIn: 100, usdOut: 99.5, depositFeeBps: 25n, aprPercent: 6, termDays: 30 });
+    assert.ok(Math.abs(e.entryPct - 0.5) < 1e-9);
+    assert.ok(Math.abs(e.roundTripPct - 1.25) < 1e-9); // 0.5 in + 0.5 out + 0.25 fee
+    assert.ok(Math.abs(e.termYieldPct - 6 * 30 / 365) < 1e-9);
+    assert.equal(e.costsMoreThanYield, true);
+  });
+  it('says when the term earns more than the round trip costs', () => {
+    const e = roundTripEstimate({ usdIn: 10_000, usdOut: 9_990, depositFeeBps: 12n, aprPercent: 6, termDays: 90 });
+    assert.equal(e.costsMoreThanYield, false);
+  });
+  it('returns null without prices', () => {
+    assert.equal(roundTripEstimate({ usdIn: 0, usdOut: 5, depositFeeBps: 25n, aprPercent: 6, termDays: 30 }), null);
   });
 });

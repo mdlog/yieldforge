@@ -11,7 +11,8 @@ import { getNearConfig } from '@/lib/near/config'
 import { getNearBalance, isLiveMode, viewCall } from '@/lib/near/wallet'
 import { needsStorageDeposit, storageMinimum } from '@/lib/near/tx'
 import { ftTransferCallUsed, panicMessage } from '@/lib/near/outcome'
-import { buildDepositTx } from '@/lib/contracts/series'
+import { buildDepositTx, fetchRefund } from '@/lib/contracts/series'
+import { RefundClaim } from '@/components/RefundClaim'
 import { buildBuyTx, isBuyable, toUiListing } from '@/lib/contracts/marketplace'
 import {
   NEAR_DECIMALS,
@@ -19,6 +20,7 @@ import {
   WNEAR_ASSET_ID,
   asPreview,
   buildBuyYtQuoteRequest,
+  buildCashOutNearTx,
   buildCashOutQuoteRequest,
   buildCashOutTx,
   buildDepositQuoteRequest,
@@ -27,6 +29,7 @@ import {
   expressCheck,
   fromAtomic,
   looksLikeAddress,
+  roundTripEstimate,
   toAtomic,
   trackerState,
   type OneClickToken,
@@ -38,6 +41,7 @@ import { loadSwaps, removeSwap, saveSwap, subscribeSwaps, type SwapFlow, type Sw
 import { useTx, type OutcomeCheck } from '@/hooks/useTx'
 import { useLiveListings, useLiveSeries, useStNearBalance, useStNearPrice } from '@/hooks/useLiveData'
 import { useSeriesDisplay } from '@/hooks/useSeriesDisplay'
+import { useStakingApr } from '@/hooks/useStakingApr'
 import { useNearQuery } from '@/hooks/useNearQuery'
 import { buyCost, formatBps, previewDeposit } from '@/utils/math'
 import { formatYocto, formatYoctoInput, parseNear, shorten } from '@/utils/format'
@@ -46,10 +50,12 @@ type Tab = SwapFlow
 const TABS: Array<{ id: Tab; label: string; blurb: string }> = [
   { id: 'deposit', label: 'Deposit', blurb: 'Any asset → PT + YT' },
   { id: 'buy-yt', label: 'Buy YT', blurb: 'Pay from any chain' },
-  { id: 'cash-out', label: 'Cash out', blurb: 'stNEAR → any chain' },
+  { id: 'cash-out', label: 'Cash out', blurb: 'stNEAR or NEAR → any chain' },
 ]
 /** Native NEAR kept back for the buy transaction's gas after unwrapping. */
 const BUY_GAS_RESERVE_YOCTO = 5n * 10n ** 21n
+/** Native NEAR kept back when cashing out NEAR: gas plus two wrap.near storage registrations. */
+const CASH_OUT_NEAR_RESERVE_YOCTO = 5n * 10n ** 22n
 
 /** 1Click only routes on NEAR mainnet. Elsewhere the page prices routes (dry quotes) but sends nothing. */
 function useIntentsLive(): boolean {
@@ -253,15 +259,19 @@ export default function AnyChainPage() {
           </li>
           <li>
             <strong>Costs.</strong> 1Click charges 0.2% plus the solver's spread, and some routes have a small withdrawal fee. Every quote above already includes them. Origin-chain
-            gas is extra.
+            gas is extra. Coming in and cashing out each cost about that much, so on a short term a small position can lose more on the round trip than the yield pays; the
+            deposit tab shows the comparison for your amount.
+          </li>
+          <li>
+            <strong>YT sales pay NEAR, redemptions pay stNEAR.</strong> Cash out either from the Cash out tab.
           </li>
           <li>
             <strong>Refunds.</strong> If a swap can't be filled before its deadline, 1Click refunds the deposit to the refund address you typed (cash-outs: to your NEAR wallet).
           </li>
           <li>
             <strong>Express deposits</strong> hand the stNEAR to the series in the same settlement (NEAR Intents' custom recipient message). The app only offers it when the series
-            will certainly accept: deposits open well past the expected landing time, room under the deposit cap, and above the minimum. Otherwise it uses Standard. 1Click marks this
-            feature experimental.
+            should accept: deposits open well past the expected landing time, room under the deposit cap, and above the minimum. Otherwise it uses Standard. If the series still
+            refuses it (for example the cap fills meanwhile), it keeps the stNEAR for your NEAR account and you claim it from Portfolio. 1Click marks this feature experimental.
           </li>
         </ul>
       </section>
@@ -389,6 +399,17 @@ function DepositFlow({ tokens, intentsLive, current, onStarted }: { tokens: OneC
   }, [series, raw, preview.quote])
   const effective = mode === 'express' && check?.ok ? 'express' : 'standard'
   const refundOk = token ? looksLikeAddress(token.blockchain, refund) : false
+  // What coming in and going back out costs, next to what the series term earns at today's APR.
+  const staking = useStakingApr()
+  const roundTrip = preview.quote
+    ? roundTripEstimate({
+        usdIn: Number(preview.quote.amountInUsd ?? 0),
+        usdOut: Number(preview.quote.amountOutUsd ?? 0),
+        depositFeeBps: feeBps,
+        aprPercent: staking.aprPercent,
+        termDays: series?.termDays ?? 0,
+      })
+    : null
 
   const start = async () => {
     if (!token || !atomic || !accountId) return
@@ -464,6 +485,15 @@ function DepositFlow({ tokens, intentsLive, current, onStarted }: { tokens: OneC
           {preview.quote?.timeEstimate ? `~${Math.max(1, Math.round(preview.quote.timeEstimate / 60))} min` : '—'} · 1Click fee included
         </small>
       </QuoteLine>
+      {roundTrip && series?.termDays ? (
+        <p className={`earn-note${roundTrip.costsMoreThanYield ? ' earn-note-warn' : ''} ac-roundtrip`}>
+          <strong>Round trip ≈ {roundTrip.roundTripPct.toFixed(2)}%</strong>: {roundTrip.entryPct.toFixed(2)}% to come in (this quote), about the same to cash out, plus the{' '}
+          {formatBps(feeBps)} deposit fee. The {series.termDays}-day term earns about {roundTrip.termYieldPct.toFixed(2)}% at today's {staking.aprPercent.toFixed(1)}% staking APR.
+          {roundTrip.costsMoreThanYield
+            ? ' At this size the round trip costs more than one term earns: it pays off only if you keep the position over several terms or want the NEAR exposure anyway.'
+            : ''}
+        </p>
+      ) : null}
 
       <div className="earn-field">
         <span className="earn-field-label">Delivery</span>
@@ -514,6 +544,11 @@ function DepositTracker({ rec, active, select }: { rec: SwapRecord; active: stri
   const amount = delivered != null && wallet != null ? (wallet < delivered ? wallet : delivered) : null
   const success = rec.status === 'SUCCESS'
   const wrongSeries = rec.seriesContract && rec.seriesContract !== active
+  // Express: a delivery the series refused (closed, paused, full, under the minimum) is held as a refund.
+  const held = useNearQuery(
+    async () => (rec.mode === 'express' && success && rec.seriesContract ? BigInt(await fetchRefund(rec.accountId, rec.seriesContract)) : 0n),
+    [rec.mode, success, rec.seriesContract, rec.accountId],
+  )
 
   const refused: OutcomeCheck = ({ value, receiptErrors }) => {
     if (ftTransferCallUsed(value) !== 0n) return null
@@ -528,7 +563,10 @@ function DepositTracker({ rec, active, select }: { rec: SwapRecord; active: stri
 
   const finalAction =
     rec.mode === 'express' ? (
-      success && (
+      success &&
+      (held.data ? (
+        <RefundClaim accountId={rec.accountId} contractId={rec.seriesContract!} label={rec.seriesContract} />
+      ) : (
         <div className="confirmed-state">
           <div>
             <strong>PT + YT minted to {rec.accountId}</strong>
@@ -541,7 +579,7 @@ function DepositTracker({ rec, active, select }: { rec: SwapRecord; active: stri
             Portfolio
           </Link>
         </div>
-      )
+      ))
     ) : success && !rec.finishedTx ? (
       <div className="ac-final">
         {wrongSeries ? (
@@ -797,7 +835,13 @@ function CashOutFlow({ tokens, intentsLive, current, onStarted }: { tokens: OneC
   const { accountId } = useWallet()
   const { push } = useToast()
   const stNear = useStNearBalance(accountId)
-  const balance = stNear.data != null ? BigInt(stNear.data) : null
+  // YT sale proceeds and PT/YT redemptions arrive as NEAR and stNEAR respectively, so both can be cashed out.
+  const [source, setSource] = useState<'stnear' | 'near'>('stnear')
+  const native = useNearQuery(async () => (accountId ? BigInt(await getNearBalance(accountId)) : null), [accountId])
+  const spendableNear = native.data != null ? (native.data > CASH_OUT_NEAR_RESERVE_YOCTO ? native.data - CASH_OUT_NEAR_RESERVE_YOCTO : 0n) : null
+  const balance = source === 'near' ? spendableNear : stNear.data != null ? BigInt(stNear.data) : null
+  const unit = source === 'near' ? 'NEAR' : 'stNEAR'
+  const originAsset = source === 'near' ? WNEAR_ASSET_ID : STNEAR_ASSET_ID
   const [amount, setAmount] = useState('')
   const [picked, setPicked] = useState<OneClickToken | null>(null)
   const token = picked ?? defaultOrigin(tokens)
@@ -808,22 +852,21 @@ function CashOutFlow({ tokens, intentsLive, current, onStarted }: { tokens: OneC
   const atomic = toAtomic(amount, NEAR_DECIMALS) ?? (amount.trim() ? null : parseNear('1'))
   const over = atomic != null && balance != null && atomic > balance
   const previewReq = useMemo(
-    () => (token && atomic ? asPreview(buildCashOutQuoteRequest({ amountStNearYocto: atomic, destinationAsset: token.assetId, recipient: '', accountId: 'wrap.near', dry: true, now: Date.now() })) : null),
-    [token, atomic],
+    () => (token && atomic ? asPreview(buildCashOutQuoteRequest({ amountStNearYocto: atomic, originAsset, destinationAsset: token.assetId, recipient: '', accountId: 'wrap.near', dry: true, now: Date.now() })) : null),
+    [token, atomic, originAsset],
   )
   const preview = useDryQuote(previewReq)
   const recipientOk = token ? looksLikeAddress(token.blockchain, recipient) : false
 
   const start = async () => {
     if (!token || !atomic || !accountId) return
-    if (over) return push('That is more stNEAR than your wallet holds.')
+    if (over) return push(source === 'near' ? 'That is more NEAR than your wallet can spare (0.05 NEAR stays for gas).' : 'That is more stNEAR than your wallet holds.')
     if (!recipientOk) return push(`Enter the ${chainLabel(token.blockchain)} address that should receive the ${token.symbol}.`)
     setBusy(true)
     try {
-      const req = buildCashOutQuoteRequest({ amountStNearYocto: atomic, destinationAsset: token.assetId, recipient, accountId, dry: false, now: Date.now() })
+      const req = buildCashOutQuoteRequest({ amountStNearYocto: atomic, originAsset, destinationAsset: token.assetId, recipient, accountId, dry: false, now: Date.now() })
       const { quote } = await getQuote(req)
       if (!quote.depositAddress) throw new Error('NEAR Intents returned no deposit address. Try again.')
-      const storageMin = await storageMinimum(cfg.stNearContractId)
       saveSwap({
         flow: 'cash-out',
         network: cfg.network,
@@ -831,16 +874,16 @@ function CashOutFlow({ tokens, intentsLive, current, onStarted }: { tokens: OneC
         depositAddress: quote.depositAddress,
         createdAt: Date.now(),
         status: 'PENDING_DEPOSIT',
-        sendLabel: `${fromAtomic(atomic, NEAR_DECIMALS, 4)} stNEAR`,
+        sendLabel: `${fromAtomic(atomic, NEAR_DECIMALS, 4)} ${unit}`,
         receiveLabel: `≈ ${quote.amountOutFormatted.replace(/(\.\d{4})\d+$/, '$1')} ${token.symbol} on ${chainLabel(token.blockchain)}`,
         amountIn: quote.amountIn,
         amountInFormatted: quote.amountInFormatted,
-        originSymbol: 'stNEAR',
+        originSymbol: unit,
         originChain: 'near',
         deadline: quote.deadline ?? req.deadline,
       })
       onStarted(quote.depositAddress)
-      const hash = await cashTx.execute(buildCashOutTx({ stNearContractId: cfg.stNearContractId, depositAddress: quote.depositAddress, amountYocto: atomic, storageMinYocto: storageMin }))
+      const hash = await cashTx.execute(await cashOutTx(source, accountId, quote.depositAddress, atomic))
       if (hash) {
         saveSwap({ depositAddress: quote.depositAddress, fundingTx: hash })
         submitDepositTx(hash, quote.depositAddress).catch(() => undefined)
@@ -857,19 +900,33 @@ function CashOutFlow({ tokens, intentsLive, current, onStarted }: { tokens: OneC
   return (
     <div className="ac-flow">
       <p className="earn-lead">
-        Turn stNEAR (for example from a redemption in <Link to="/portfolio">Portfolio</Link>) into USDC, ETH, BTC or anything else, delivered on its own chain. One NEAR
-        transaction.
+        Turn stNEAR (from a redemption in <Link to="/portfolio">Portfolio</Link>) or NEAR (from selling YT) into USDC, ETH, BTC or anything else, delivered on its own
+        chain. One NEAR transaction.
       </p>
-      <div className="earn-grid">
-        <Field id="out-amount" label="stNEAR to cash out" hint={balance != null ? `Wallet: ${formatYocto(balance, 4)} stNEAR` : 'Connect a wallet to see your balance'}>
-          <AmountInput id="out-amount" value={amount} onChange={setAmount} unit="stNEAR" onMax={balance ? () => setAmount(fromAtomic(balance, NEAR_DECIMALS)) : undefined} disabled={busy} />
-        </Field>
-        <AssetPicker id="out-asset" label="Receive" tokens={tokens} value={token} onChange={setPicked} excludeAssetIds={[STNEAR_ASSET_ID]} disabled={busy} />
+      <div className="earn-field">
+        <span className="earn-field-label">Cash out</span>
+        <div className="earn-chips" role="radiogroup" aria-label="Asset to cash out">
+          {(['stnear', 'near'] as const).map((k) => (
+            <button key={k} type="button" role="radio" aria-checked={source === k} className={source === k ? 'is-on' : undefined} onClick={() => setSource(k)} disabled={busy}>
+              {k === 'near' ? 'NEAR (YT sale proceeds)' : 'stNEAR (redemptions)'}
+            </button>
+          ))}
+        </div>
       </div>
-      {over && <p className="ac-error">That is more stNEAR than your wallet holds.</p>}
+      <div className="earn-grid">
+        <Field
+          id="out-amount"
+          label={`${unit} to cash out`}
+          hint={balance != null ? `${source === 'near' ? 'Spendable' : 'Wallet'}: ${formatYocto(balance, 4)} ${unit}${source === 'near' ? ' (0.05 kept for gas)' : ''}` : 'Connect a wallet to see your balance'}
+        >
+          <AmountInput id="out-amount" value={amount} onChange={setAmount} unit={unit} onMax={balance ? () => setAmount(fromAtomic(balance, NEAR_DECIMALS)) : undefined} disabled={busy} />
+        </Field>
+        <AssetPicker id="out-asset" label="Receive" tokens={tokens} value={token} onChange={setPicked} excludeAssetIds={[STNEAR_ASSET_ID, WNEAR_ASSET_ID]} disabled={busy} />
+      </div>
+      {over && <p className="ac-error">That is more {unit} than your wallet {source === 'near' ? 'can spare' : 'holds'}.</p>}
       <QuoteLine loading={preview.loading} error={preview.error}>
         <span>
-          {amount.trim() ? 'You receive' : '1 stNEAR gets'} ≈{' '}
+          {amount.trim() ? 'You receive' : `1 ${unit} gets`} ≈{' '}
           <strong>
             {preview.quote ? `${preview.quote.amountOutFormatted.replace(/(\.\d{4})\d+$/, '$1')} ${token?.symbol ?? ''}` : '—'}
           </strong>{' '}
@@ -883,8 +940,10 @@ function CashOutFlow({ tokens, intentsLive, current, onStarted }: { tokens: OneC
       <Field id="out-recipient" label={`${token ? chainLabel(token.blockchain) : 'Destination'} address that receives it`}>
         <AddressInput id="out-recipient" value={recipient} onChange={setRecipient} chain={token?.blockchain ?? ''} placeholder="Where the funds should arrive" disabled={busy} />
       </Field>
-      <small className="earn-hint">Refunds, if any, return as stNEAR to {accountId ?? 'your NEAR wallet'}.</small>
-      <TxFeedback tx={cashTx} failedTitle="Transfer failed" successTitle="stNEAR sent to NEAR Intents" />
+      <small className="earn-hint">
+        Refunds, if any, return as {source === 'near' ? 'wNEAR (unwrap it on Buy YT or any wallet)' : 'stNEAR'} to {accountId ?? 'your NEAR wallet'}.
+      </small>
+      <TxFeedback tx={cashTx} failedTitle="Transfer failed" successTitle={`${unit} sent to NEAR Intents`} />
       {cashTx.phase === 'idle' && (
         <div className="earn-actions">
           <StartButton intentsLive={intentsLive} ready={!!atomic && !over && recipientOk && !!preview.quote} busy={busy} onClick={() => void start()}>
@@ -896,12 +955,21 @@ function CashOutFlow({ tokens, intentsLive, current, onStarted }: { tokens: OneC
   )
 }
 
-function CashOutTracker({ rec, tx: cashTx }: { rec: SwapRecord; tx: ReturnType<typeof useTx> }) {
+/** The NEAR transaction that funds a cash-out deposit address, for stNEAR or (wrapped) native NEAR. */
+async function cashOutTx(source: 'stnear' | 'near', accountId: string, depositAddress: string, amountYocto: bigint) {
   const cfg = getNearConfig()
+  if (source === 'near') {
+    const storageMinYocto = await storageMinimum(wnearContract())
+    return buildCashOutNearTx({ wnearContractId: wnearContract(), accountId, depositAddress, amountYocto, storageMinYocto })
+  }
+  return buildCashOutTx({ stNearContractId: cfg.stNearContractId, depositAddress, amountYocto, storageMinYocto: await storageMinimum(cfg.stNearContractId) })
+}
+
+function CashOutTracker({ rec, tx: cashTx }: { rec: SwapRecord; tx: ReturnType<typeof useTx> }) {
   const expired = rec.deadline ? Date.parse(rec.deadline) < Date.now() : false
+  const unit = rec.originSymbol === 'NEAR' ? 'NEAR' : 'stNEAR'
   const retry = async () => {
-    const storageMin = await storageMinimum(cfg.stNearContractId)
-    const hash = await cashTx.execute(buildCashOutTx({ stNearContractId: cfg.stNearContractId, depositAddress: rec.depositAddress, amountYocto: BigInt(rec.amountIn), storageMinYocto: storageMin }))
+    const hash = await cashTx.execute(await cashOutTx(unit === 'NEAR' ? 'near' : 'stnear', rec.accountId, rec.depositAddress, BigInt(rec.amountIn)))
     if (hash) {
       saveSwap({ depositAddress: rec.depositAddress, fundingTx: hash })
       submitDepositTx(hash, rec.depositAddress).catch(() => undefined)
@@ -920,12 +988,12 @@ function CashOutTracker({ rec, tx: cashTx }: { rec: SwapRecord; tx: ReturnType<t
         finalAction={
           unfunded ? (
             <div className="ac-final">
-              <TxFeedback tx={cashTx} failedTitle="Transfer failed" successTitle="stNEAR sent to NEAR Intents" />
+              <TxFeedback tx={cashTx} failedTitle="Transfer failed" successTitle={`${unit} sent to NEAR Intents`} />
               {cashTx.phase === 'idle' &&
                 (expired ? (
-                  <p className="earn-note">This quote expired before the stNEAR was sent. Nothing left your wallet; hide it and start a new cash-out.</p>
+                  <p className="earn-note">This quote expired before the {unit} was sent. Nothing left your wallet; hide it and start a new cash-out.</p>
                 ) : (
-                  <Button onClick={() => void retry()}>Sign the stNEAR transfer</Button>
+                  <Button onClick={() => void retry()}>Sign the {unit} transfer</Button>
                 ))}
             </div>
           ) : rec.status === 'SUCCESS' ? (

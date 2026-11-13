@@ -216,9 +216,11 @@ export default function EarnPage() {
   const [now] = useState(() => Date.now())
   const qtyYocto = toYocto(quantity)
   const priceYocto = toYocto(price)
-  const suggested = r0 != null ? fairYtPrice(r0, staking.aprPercent, yieldDays) : null
-  // The APR the seller fixes by selling at this price, next to what staking pays today.
-  const locked = priceYocto !== null && r0 != null ? lockedApr(Number(formatYocto(priceYocto, 8)), r0, yieldDays) : null
+  const suggested = r0 != null ? fairYtPrice(r0, staking.aprPercent, yieldDays, rate ?? r0) : null
+  // The APR a depositor fixes by selling all their YT at this price, over the whole term and net of the
+  // deposit fee, next to what staking pays today.
+  const depositFeeBps = series?.depositFeeBps ?? DEPOSIT_FEE_BPS
+  const locked = priceYocto !== null && r0 != null && series?.termDays ? lockedApr(Number(formatYocto(priceYocto, 8)), r0, series.termDays, depositFeeBps) : null
   const proceeds = buyCost(qtyYocto ?? 0n, priceYocto ?? 0n, series?.marketFeeBps ?? MARKET_FEE_BPS).cost
   const expiries = useMemo(() => listingExpiryOptions(now, series?.maturityMs), [now, series?.maturityMs])
   const expiry = expiries.find((o) => o.key === expiryKey) ?? expiries.find((o) => o.key === '7') ?? expiries.at(-1) ?? null
@@ -490,7 +492,8 @@ export default function EarnPage() {
                 </span>
                 {locked != null && (
                   <span className="earn-lock">
-                    That locks in <strong>{locked.toFixed(2)}% APR</strong>, fixed, until {series?.maturityLabel ?? 'maturity'} · staking pays about{' '}
+                    Deposit and sell all your YT at this price and you lock in <strong>{locked.toFixed(2)}% APR</strong> until {series?.maturityLabel ?? 'maturity'}, after the{' '}
+                    {formatBps(depositFeeBps)} deposit fee. It is fixed in NEAR, not in dollars, and holds while the stNEAR rate does not fall · staking pays about{' '}
                     {staking.aprPercent.toFixed(1)}% today, variable ({staking.label})
                   </span>
                 )}

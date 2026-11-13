@@ -211,7 +211,7 @@ the browser (no backend, no API key; 1Click adds its 0.2 % fee, which every quot
 | --- | --- | --- |
 | **Deposit** | Sends e.g. 25 USDC on Arbitrum to a one-time deposit address | A solver swaps it to stNEAR. **Express:** NEAR Intents delivers it with `ft_transfer_call` to the series, with `msg` `{"receiver_id":"<user>.near"}`, and the series mints PT + YT to the user. No NEAR transaction needed. **Standard:** the stNEAR lands in the user's wallet and they sign the deposit. |
 | **Buy YT** | Picks a listing, sends BTC/ETH/SOL/USDC | An `EXACT_OUTPUT` quote delivers exactly the NEAR the purchase needs (price + 0.25 % fee + one-time YT registration + gas) as wNEAR; the app unwraps it (`near_withdraw`) and the user signs `buy`. |
-| **Cash out** | After redeeming, sends stNEAR to any chain | One NEAR transaction to `meta-pool.near`: `storage_deposit` for the deposit address, then `ft_transfer` to it. 1Click swaps and pays out on the destination chain; refunds come back to the NEAR wallet. |
+| **Cash out** | Sends stNEAR (redemptions) or NEAR (YT sale proceeds) to any chain | One NEAR transaction. stNEAR: `storage_deposit` for the deposit address on `meta-pool.near`, then `ft_transfer`. NEAR: on `wrap.near`, register the wallet, `near_deposit`, register the deposit address, `ft_transfer`. 1Click swaps and pays out on the destination chain; refunds come back to the NEAR wallet. |
 
 Every swap gets a **funds tracker**: quote → sent → swapping on NEAR Intents → arrived on NEAR → deposited / bought / delivered,
 polled from `/v0/status`, kept in the browser across reloads, with links to the origin transaction and the
@@ -220,14 +220,25 @@ polled from `/v0/status`, kept in the browser across reloads, with links to the 
 **Safety rules in the app.**
 - Express is only offered when the series will certainly accept the stNEAR: deposits stay open at least two hours past three
   times the quoted time estimate, the deposit cap has room for the quoted amount + 1 %, the worst-case output clears the
-  minimum, and the series is not paused. The check runs again on the real quote. Otherwise the app uses Standard, so a
-  refused delivery never depends on 1Click's refund path (1Click marks `customRecipientMsg` experimental).
+  minimum, and the series is not paused. The check runs again on the real quote. Otherwise the app uses Standard.
+- If a routed delivery is refused anyway (the cap filled meanwhile, the cutoff passed during a slow swap), the series does
+  **not** bounce it: a bounce would return the stNEAR to the NEAR Intents account that delivered it, not to the user. It keeps
+  it for the `receiver_id` instead (`deposit_refunded` event) and the user withdraws it with `claim_refund` (Portfolio and the
+  deposit tracker show a Claim button, registering the account on stNEAR first if needed). Routed dust under 0.01 stNEAR is
+  refused outright so nobody can fill the series' storage with refund records.
+- **Before Express goes public on mainnet** it needs one live test of a few dollars: NEAR Intents forwards `ft_transfer_call`
+  with 50 Tgas by default and Meta Pool passes about 8 Tgas of that to `ft_on_transfer`, which uses about 2.4 Tgas on testnet.
+  The margin looks sufficient, but it has to be seen on mainnet. 1Click marks `customRecipientMsg` experimental.
 - Cash-outs use a plain `ft_transfer`, never `ft_transfer_call`, because the deposit address is an implicit account with no contract.
-- Mainnet series carry a **deposit cap** (`--cap`, required by `deploy-series.mjs` on mainnet) to limit exposure of unaudited code.
+- Mainnet series carry a **deposit cap** (`--cap`, required by `deploy-series.mjs` on mainnet) to limit exposure of unaudited code,
+  and a **minimum deposit** of 1 stNEAR by default (`--min-deposit`), because the series pays each new depositor's storage.
+- The deposit tab compares the **round-trip cost** (this quote's entry cost, about the same again to cash out, plus the deposit
+  fee) with what one term earns at today's APR, and warns when the trip costs more.
 
 **Honest caveats.** The fixed rate a YT sale locks in is a stNEAR-to-NEAR return. A user who arrives with USDC holds NEAR price
 exposure until they cash out; the page says so before anything is sent. Swaps cost the 1Click fee plus the solver spread and
-origin-chain gas.
+origin-chain gas, each way: on a 7- or 30-day term a small position can lose more on the round trip than the term pays. The
+cross-chain path makes sense for larger amounts, for several terms in a row, or for someone who wants NEAR exposure anyway.
 
 **Status.** The flows, the v3 contract (receiver message + cap) and the mainnet build are in this repository and tested
 (contract unit tests, `tests/intents-flows.test.mjs`, live dry quotes). The mainnet series are **not deployed yet**. Until they
@@ -315,7 +326,10 @@ Toolchain notes (why `--cfg near`, pinned near-sdk 5.27, rustup first in `PATH`)
 
 The same scripts run on mainnet with `NEAR_NETWORK=mainnet`. They then read keys from `yieldforge/.env.mainnet.local`
 (git-ignored), talk to `meta-pool.near` over FastNEAR, and write the series list to `yieldforge/.env.mainnet`. A series costs
-about 3.1 NEAR of storage (the v3 wasm is 292 KB). `--cap` is required on mainnet.
+about 3.1 NEAR of storage (the v3 wasm is 291 KB), plus a reserve of 0.005 NEAR for every depositor the cap allows
+(`cap / min-deposit`: 0.25 NEAR for `--cap 50 --min-deposit 1`). On mainnet `--cap` is required, the minimum deposit defaults to
+1 stNEAR, tenors under 7 days are refused, and the deposit fee defaults to 0.5 % a year pro-rated to the tenor (`--fee-apr`;
+testnet keeps 1 % a year). On a 30-day series that is 4 bps.
 
 ```sh
 bash scripts/build-contract.sh   # contracts/target/yieldforge_series_v3.wasm
@@ -367,6 +381,14 @@ Deploy keys (`NEAR_ACCOUNT`, `NEAR_PRIVATE_KEY`) are only for the scripts. Keep 
 - **Narrow admin.** Pause stops new deposits, listings and fills only. There is no admin path to user stNEAR.
 - **Not audited.** This is testnet software. The series accounts still hold a full-access deployer key, so the code can be
   upgraded; before mainnet the keys should be removed or moved to a multisig/DAO.
+- **Storage is paid by the series.** Registration happens on first deposit; `storage_unregister` is disabled so PT, YT and
+  refund records can never be dropped (and their storage refunded) while they still have value. `pt_transfer` charges the
+  sender for a new receiver's PT record. Listings must expire by maturity and nothing can be bought after it.
+- **Keeper dependency.** R0 is captured by anyone calling `capture_baseline` after the cutoff (the repo has a keeper script);
+  if nobody does, the series cannot settle with a baseline and YT pays nothing.
+- **Payouts need stNEAR registration.** Redemptions and refund claims pay stNEAR, so the wallet must be registered on
+  `meta-pool.near`; the app offers the registration (0.00125 NEAR) before the first payout. A seller who deletes their
+  NEAR account loses the payment for listings filled afterwards.
 - **YT can pay zero.** If the stNEAR rate does not rise above R0 (it has been flat on testnet since 2026-11-03), or if the baseline
   is never captured, YT redeems for nothing. PT is not principal-protected if the rate falls.
 - **Market depth.** Listings are fixed-price with no AMM, so a buyer may not exist when you want to exit. The 0.25 % market fee is

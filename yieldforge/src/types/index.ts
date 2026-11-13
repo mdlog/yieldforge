@@ -118,6 +118,8 @@ export interface SeriesView {
   /** v3: most stNEAR the series accepts in total, and what is left of it. Absent = no cap. */
   depositCap?: string
   depositCapRemaining?: string
+  /** stNEAR held for refused routed deposits (v3). */
+  refundsPending?: string
 }
 
 export type ListingViewStatus = 'OPEN' | 'PARTIALLY_FILLED' | 'FILLED' | 'CANCELLED' | 'EXPIRED'

@@ -15,6 +15,7 @@ import { buildCancelListingTx, isFillable, toUiListing } from '@/lib/contracts/m
 import { useAccountActivity, useLiveListings, useLivePosition } from '@/hooks/useLiveData'
 import { useSeriesDisplay } from '@/hooks/useSeriesDisplay'
 import { tenorLabel, useAllPositions, useAllSeries } from '@/hooks/useAllSeries'
+import { RefundClaim } from '@/components/RefundClaim'
 import { isRateFlat, useStakingApr } from '@/hooks/useStakingApr'
 import type { SeriesDisplay } from '@/hooks/useSeriesDisplay'
 import { useTx } from '@/hooks/useTx'
@@ -160,6 +161,8 @@ export default function PortfolioPage() {
       </div>
 
       <DemoBanner />
+
+      {live && isConnected && seriesIds.map((id) => <RefundClaim key={id} accountId={accountId} contractId={id} label={id} />)}
 
       {!isConnected && (
         <div className="connect-strip" role="status">

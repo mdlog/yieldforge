@@ -112,9 +112,14 @@ export default function ListingDetailPage() {
   const r0 = series?.baselineRate ?? series?.currentRate ?? null
   const yieldDays = series?.maturityMs ? Math.max(0, (series.maturityMs - Math.max(Date.now(), series.cutoffMs ?? 0)) / DAY_MS) : 0
   const unitPrice = Number(formatYocto(unitPriceYocto, 8))
-  const breakEven = r0 ? breakEvenApr(unitPrice, feeBps, r0, yieldDays) : null
+  const rateNow = series?.currentRate ?? r0
+  const breakEven = r0 && rateNow ? breakEvenApr(unitPrice, feeBps, r0, yieldDays, rateNow) : null
   const qtyNumber = Number(formatYocto(qtyYocto ?? 0n, 6))
-  const scenarios = series?.baselineRate != null ? buildScenarioRows(series.baselineRate, qtyNumber, Number(formatYocto(cost.total, 6))) : null
+  // Before the cutoff, today's rate stands in for R0, as in the break-even figure.
+  const scenarios =
+    r0 && rateNow
+      ? buildScenarioRows({ r0, rateNow, aprPercent: staking.aprPercent, daysLeft: yieldDays, ytQuantity: qtyNumber, costNear: Number(formatYocto(cost.total, 6)) })
+      : null
   const seriesName = series ? `${tenorLabel(series)} · ${series.id}` : 'this series'
 
   const buy = async () => {
@@ -255,9 +260,10 @@ export default function ListingDetailPage() {
                     <span>{`${row.buyerPayoff >= 0 ? '+' : '−'}${formatNear(Math.abs(row.buyerPayoff), 4)}`}</span>
                   </div>
                 ))}
+                <small className="earn-muted">Values in NEAR at maturity, paid as stNEAR. One APR point either way, not a forecast.</small>
               </div>
             ) : (
-              <p className="earn-muted">Scenarios appear once the series baseline R0 is recorded ({series?.cutoffLabel ?? 'at the cutoff'}).</p>
+              <p className="earn-muted">Scenarios appear once the stNEAR rate is known.</p>
             )}
           </details>
           <details className="buy-details">

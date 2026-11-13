@@ -83,7 +83,9 @@ const KEEPER_ACCOUNT = (import.meta.env.VITE_KEEPER_ACCOUNT as string | undefine
 /** NEP-297 events of the `yieldforge` standard and the fields of each `data` entry (contracts/series/src/lib.rs). */
 const EVENTS: Array<[event: string, emittedBy: string, fields: string]> = [
   ['series_created', 'new (initialization)', 'series_id, deposits_close_at, maturity_at'],
-  ['deposit_received', 'stNEAR deposit', 'account_id, amount, fee, pt_minted, yt_minted'],
+  ['deposit_received', 'stNEAR deposit', 'account_id, sender_id, amount, fee, pt_minted, yt_minted'],
+  ['deposit_refunded', 'a routed (cross-chain) deposit the series could not accept; kept for the receiver', 'account_id, sender_id, amount, reason'],
+  ['refund_claimed', 'claim_refund, once the stNEAR is paid', 'account_id, amount'],
   ['listing_created', 'create_listing', 'listing_id, seller, quantity, unit_price, expires_at'],
   ['listing_filled', 'buy', 'listing_id, buyer, seller, quantity, cost, fee'],
   ['listing_cancelled', 'cancel_listing', 'listing_id, seller, returned'],
@@ -101,8 +103,12 @@ const ERRORS: Array<[message: string, cause: string, fix: string]> = [
   [
     'Deposits closed · Deposits are paused · Below minimum deposit',
     'stNEAR sent after the cutoff, while the series is paused, or under the minimum',
-    'Nothing is lost: the stNEAR contract refunds the transfer, and the app reports the deposit as refused. Pick an open series or send at least the minimum.',
+    'Nothing is lost: the stNEAR contract refunds the transfer, and the app reports the deposit as refused. Pick an open series or send at least the minimum. A cross-chain (Express) deposit is kept for you instead; claim it from Portfolio.',
   ],
+  ['Deposit cap reached', 'The series already holds its cap (mainnet series are capped)', 'Pick another series, or deposit less than deposit_cap_remaining.'],
+  ['Expiry must be before maturity · Series matured: YT can no longer be bought', 'A listing that would outlive the series, or a buy after maturity', 'List with an earlier expiry; after maturity, redeem instead of trading.'],
+  ['No refund to claim', 'claim_refund with nothing held for the account', 'Nothing to do.'],
+  ['Unregistering is disabled', 'storage_unregister on the series', 'PT, YT and refund records stay with the account by design.'],
   ['Paused', 'create_listing or buy while the owner has paused the series', 'Wait for unpause. Cancelling, settling and redeeming still work on the contract.'],
   ['Expiry must be in the future', 'create_listing with an expires_at that has passed', 'Choose a later expiry (seconds or nanoseconds are both accepted).'],
   ['Attach at least … yoctoNEAR for listing storage', 'create_listing without enough NEAR for the listing’s storage', 'Attach the amount in the message; anything above the exact cost is refunded.'],
@@ -645,7 +651,7 @@ YT  →  max(RT − R0, 0) / RT   stNEAR   (worth RT − R0 NEAR)`}</code>
                   <tr>
                     <td>Deposit fee</td>
                     <td>{depositFees}</td>
-                    <td>Deducted from deposited stNEAR. Sized to the tenor (about 1% a year), set at initialization, at most 1%.</td>
+                    <td>Deducted from deposited stNEAR. Sized to the tenor (1% a year on testnet, 0.5% a year on mainnet), set at initialization, at most 1%.</td>
                   </tr>
                   <tr>
                     <td>Market fee</td>
@@ -705,12 +711,13 @@ YT  →  max(RT − R0, 0) / RT   stNEAR   (worth RT − R0 NEAR)`}</code>
                 <tbody>
                   <Method
                     name="new"
-                    args="owner_id, series_id, underlying_token, deposits_close_at, maturity_at, deposit_fee_bps?, fee_collector?"
+                    args="owner_id, series_id, underlying_token, deposits_close_at, maturity_at, deposit_fee_bps?, fee_collector?, deposit_cap?, min_deposit?"
                     who="Deployer, once"
                     attach="—"
-                    effect="Initializes the fixed terms: dates, a deposit fee of at most 1% (0.25% if omitted) and the fee collector (the owner if omitted)"
+                    effect="Initializes the fixed terms: dates, a deposit fee of at most 1% (0.25% if omitted), the fee collector (the owner if omitted), an optional cap on total deposits and the minimum deposit (at least 0.01 stNEAR)"
                   />
-                  <Method name="ft_transfer_call" args="on stNEAR → series, msg: “”" who="Depositor" attach="1 yocto" effect="Deposit before the cutoff; mints PT + YT net of the fee" />
+                  <Method name="ft_transfer_call" args="on stNEAR → series, msg: “” or {“receiver_id”}" who="Depositor or NEAR Intents" attach="1 yocto" effect="Deposit before the cutoff; mints PT + YT net of the fee, to the sender or the receiver_id" />
+                  <Method name="claim_refund" args="" who="Account with a held refund" attach="1 yocto" effect="Pays stNEAR kept from a refused cross-chain deposit; restored if the transfer fails" />
                   <Method name="create_listing" args="quantity, unit_price, expires_at" who="YT holder" attach="storage" effect="Escrows YT and opens a fixed-price listing" />
                   <Method name="buy" args="listing_id, quantity" who="Anyone but the seller" attach="cost + fee (+ storage)" effect="Atomic fill; partial fills allowed; excess refunded" />
                   <Method name="cancel_listing" args="listing_id" who="Seller" attach="1 yocto" effect="Returns unfilled YT" />
@@ -718,7 +725,7 @@ YT  →  max(RT − R0, 0) / RT   stNEAR   (worth RT − R0 NEAR)`}</code>
                   <Method name="capture_baseline" args="" who="Anyone, after cutoff" attach="—" effect="Stores R0 once" />
                   <Method name="request_settlement" args="" who="Anyone, after maturity" attach="—" effect="Stores RT once" />
                   <Method name="redeem_pt / redeem_yt" args="amount" who="Holder, after settlement" attach="1 yocto" effect="Burns the claim and pays stNEAR" />
-                  <Method name="pt_transfer" args="receiver_id, amount" who="PT holder" attach="1 yocto" effect="Moves PT to a registered account" />
+                  <Method name="pt_transfer" args="receiver_id, amount" who="PT holder" attach="1 yocto (+ storage for a new PT record)" effect="Moves PT to a registered account; excess refunded" />
                   <Method
                     name="ft_transfer / ft_transfer_call"
                     args="receiver_id, amount, memo? (, msg)"
@@ -732,7 +739,7 @@ YT  →  max(RT − R0, 0) / RT   stNEAR   (worth RT − R0 NEAR)`}</code>
                     args="amount? | force?"
                     who="Registered account"
                     attach="1 yocto"
-                    effect="NEP-145: withdraw storage NEAR above the minimum, or close the registration (force burns any YT left)"
+                    effect="NEP-145: withdraw storage NEAR above the minimum. Unregistering is disabled: PT, YT and refund records stay with the account"
                   />
                   <Method name="pause / unpause" args="" who="Owner" attach="—" effect="Blocks or reopens deposits, listings and fills" />
                   <Method name="withdraw_fees" args="" who="Owner" attach="1 yocto" effect="Sends accumulated deposit fees to the fee collector" />

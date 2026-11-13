@@ -1,4 +1,4 @@
-//! YieldForge series v2: stNEAR vault, PT ledger, YT as a NEP-141 token, and a fixed-price YT market.
+//! YieldForge series v3: stNEAR vault, PT ledger, YT as a NEP-141 token, and a fixed-price YT market.
 //!
 //! The marketplace lives in the same contract (ARCH §4.4 allows this when state and methods stay
 //! separate). That makes a fill atomic: escrowed YT moves to the buyer and the seller is paid in the
@@ -41,14 +41,16 @@ const YOCTO: u128 = 1_000_000_000_000_000_000_000_000;
 const BPS: u128 = 10_000;
 /// Fee on fills, paid by the buyer on top of the price.
 pub const MARKET_FEE_BPS: u16 = 25;
-/// Smallest deposit: 0.01 stNEAR (also bounds the storage the contract pays for new depositors).
+/// Floor for a series' minimum deposit: 0.01 stNEAR. Each series sets its own minimum at `new` (default: this);
+/// it also bounds how many new accounts the contract pays storage for (cap / minimum).
 pub const MIN_DEPOSIT: u128 = 10_000_000_000_000_000_000_000;
 const MAX_DEPOSIT_FEE_BPS: u16 = 100;
 const MAX_LISTINGS_PAGE: u64 = 100;
 
 const GAS_RATE_QUERY: Gas = Gas::from_tgas(10);
 const GAS_RATE_CALLBACK: Gas = Gas::from_tgas(10);
-const GAS_FT_TRANSFER: Gas = Gas::from_tgas(10);
+/// Headroom over Meta Pool's ft_transfer cost: an upgraded stNEAR contract may need more.
+const GAS_FT_TRANSFER: Gas = Gas::from_tgas(20);
 const GAS_PAYOUT_CALLBACK: Gas = Gas::from_tgas(10);
 
 /// floor(a × b / d), computed in 256 bits.
@@ -59,10 +61,15 @@ pub fn mul_div(a: u128, b: u128, d: u128) -> u128 {
     r.as_u128()
 }
 
+/// A promise result that succeeded, including one whose return value is longer than we read.
+fn promise_succeeded() -> bool {
+    matches!(env::promise_result_checked(0, 64), Ok(_) | Err(PromiseError::TooLong(_)))
+}
+
 fn emit_event(event: &str, data: serde_json::Value) {
     env::log_str(&format!(
         "EVENT_JSON:{}",
-        json!({ "standard": "yieldforge", "version": "2.0.0", "event": event, "data": [data] })
+        json!({ "standard": "yieldforge", "version": "3.0.0", "event": event, "data": [data] })
     ));
 }
 
@@ -73,6 +80,7 @@ enum StorageKey {
     Pt,
     Deposits,
     Listings,
+    Refunds,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -140,6 +148,8 @@ pub struct SeriesView {
     pub deposit_cap: Option<U128>,
     /// stNEAR still accepted before the cap; None = uncapped.
     pub deposit_cap_remaining: Option<U128>,
+    /// Routed deposits the series could not accept, held for their receivers to claim (stNEAR).
+    pub refunds_pending: U128,
     pub total_stnear_deposited: U128,
     pub total_pt_minted: U128,
     pub total_yt_minted: U128,
@@ -213,6 +223,11 @@ pub struct Contract {
     escrowed: u128,
     /// Most stNEAR accepted in total (gross); a safety limit for unaudited deployments. Fixed at init.
     deposit_cap: Option<u128>,
+    /// Smallest accepted deposit (stNEAR), ≥ MIN_DEPOSIT. Fixed at init.
+    min_deposit: u128,
+    /// Routed deposits refused by the series, claimable by their receiver with `claim_refund`.
+    refunds: LookupMap<AccountId, u128>,
+    refunds_total: u128,
 }
 
 /// Optional `msg` of a deposit (`ft_transfer_call` on stNEAR). Empty msg = mint to the sender.
@@ -235,11 +250,14 @@ impl Contract {
         deposit_fee_bps: Option<u16>,
         fee_collector: Option<AccountId>,
         deposit_cap: Option<U128>,
+        min_deposit: Option<U128>,
     ) -> Self {
         require!(deposits_close_at.0 > env::block_timestamp(), "Deposit cutoff must be in the future");
         require!(maturity_at.0 > deposits_close_at.0, "Maturity must be after the deposit cutoff");
         let fee = deposit_fee_bps.unwrap_or(25);
         require!(fee <= MAX_DEPOSIT_FEE_BPS, "Deposit fee above 1%");
+        let min_deposit = min_deposit.map_or(MIN_DEPOSIT, |m| m.0);
+        require!(min_deposit >= MIN_DEPOSIT, "Minimum deposit below 0.01 stNEAR");
         let mut this = Self {
             fee_collector: fee_collector.unwrap_or_else(|| owner_id.clone()),
             owner: owner_id,
@@ -264,6 +282,9 @@ impl Contract {
             next_listing_id: 1,
             escrowed: 0,
             deposit_cap: deposit_cap.map(|c| c.0),
+            min_deposit,
+            refunds: LookupMap::new(StorageKey::Refunds),
+            refunds_total: 0,
         };
         // The contract's own YT account holds listing escrow.
         this.yt.internal_register_account(&env::current_account_id());
@@ -425,7 +446,7 @@ impl Contract {
     /// If the stNEAR transfer failed, give the burned claim back so redemption can be retried.
     #[private]
     pub fn on_payout(&mut self, account_id: AccountId, amount: U128, payout: U128, claim: Claim) -> U128 {
-        if env::promise_result_checked(0, 64).is_ok() {
+        if promise_succeeded() {
             return payout;
         }
         match claim {
@@ -443,11 +464,65 @@ impl Contract {
         U128(0)
     }
 
+    // ---- Deposits refused on behalf of a receiver ------------------------------------------
+
+    fn deposit_refusal(&self, amount: u128) -> Option<&'static str> {
+        if self.paused {
+            Some("Deposits are paused")
+        } else if env::block_timestamp() >= self.deposits_close_at {
+            Some("Deposits closed")
+        } else if amount < self.min_deposit {
+            Some("Below minimum deposit")
+        } else if self.deposit_cap.is_some_and(|cap| self.total_deposited + amount > cap) {
+            Some("Deposit cap reached")
+        } else {
+            None
+        }
+    }
+
+    pub fn get_refund(&self, account_id: AccountId) -> U128 {
+        U128(self.refunds.get(&account_id).copied().unwrap_or(0))
+    }
+
+    /// Withdraw stNEAR held for you from a routed deposit the series could not accept. Works while paused.
+    /// The caller must be registered on the stNEAR contract; if the transfer fails the refund is restored.
+    #[payable]
+    pub fn claim_refund(&mut self) -> Promise {
+        assert_one_yocto();
+        let account = env::predecessor_account_id();
+        let amount = self.refunds.remove(&account).unwrap_or(0);
+        require!(amount > 0, "No refund to claim");
+        self.refunds_total -= amount;
+        Promise::new(self.underlying.clone())
+            .function_call(
+                "ft_transfer".to_string(),
+                json!({ "receiver_id": account, "amount": U128(amount), "memo": "YieldForge refund" }).to_string().into_bytes(),
+                NearToken::from_yoctonear(1),
+                GAS_FT_TRANSFER,
+            )
+            .then(Self::ext(env::current_account_id()).with_static_gas(GAS_PAYOUT_CALLBACK).on_refund_claimed(account, U128(amount)))
+    }
+
+    #[private]
+    pub fn on_refund_claimed(&mut self, account_id: AccountId, amount: U128) -> bool {
+        if promise_succeeded() {
+            emit_event("refund_claimed", json!({ "account_id": account_id, "amount": amount }));
+            return true;
+        }
+        let held = self.refunds.get(&account_id).copied().unwrap_or(0);
+        self.refunds.insert(account_id, held + amount.0);
+        self.refunds_total += amount.0;
+        false
+    }
+
     // ---- PT ledger -------------------------------------------------------------------------
 
+    /// Move PT to a registered account. Attach 1 yocto, or the storage of the receiver's PT entry if it has none yet
+    /// (the excess is refunded): the contract never pays for storage a sender creates.
     #[payable]
     pub fn pt_transfer(&mut self, receiver_id: AccountId, amount: U128) {
-        assert_one_yocto();
+        let attached = env::attached_deposit().as_yoctonear();
+        require!(attached >= 1, "Requires attached deposit of at least 1 yoctoNEAR");
         let sender = env::predecessor_account_id();
         require!(sender != receiver_id, "Sender and receiver should be different");
         require!(amount.0 > 0, "Amount must be positive");
@@ -455,8 +530,13 @@ impl Contract {
         let from = self.pt.get(&sender).copied().unwrap_or(0);
         require!(from >= amount.0, "Insufficient PT");
         self.pt.insert(sender.clone(), from - amount.0);
+        let initial_storage = env::storage_usage();
         let to = self.pt.get(&receiver_id).copied().unwrap_or(0);
         self.pt.insert(receiver_id.clone(), to + amount.0);
+        self.pt.flush();
+        let storage_cost = Self::storage_cost_since(initial_storage);
+        require!(attached >= storage_cost.max(1), format!("Attach at least {} yoctoNEAR for PT storage", storage_cost.max(1)));
+        Self::refund(&sender, attached - storage_cost.max(1));
         emit_event("pt_transfer", json!({ "old_owner_id": sender, "new_owner_id": receiver_id, "amount": amount }));
     }
 
@@ -477,6 +557,8 @@ impl Contract {
             expiry = expiry.saturating_mul(1_000_000_000); // seconds → nanoseconds
         }
         require!(expiry > env::block_timestamp(), "Expiry must be in the future");
+        // Once RT is known a stale price could be sniped, so no listing outlives the series.
+        require!(expiry <= self.maturity_at, "Expiry must be before maturity");
 
         let seller = env::predecessor_account_id();
         let initial_storage = env::storage_usage();
@@ -514,6 +596,7 @@ impl Contract {
     #[payable]
     pub fn buy(&mut self, listing_id: U64, quantity: U128) -> U128 {
         require!(!self.paused, "Paused");
+        require!(env::block_timestamp() < self.maturity_at, "Series matured: YT can no longer be bought");
         let buyer = env::predecessor_account_id();
         let mut listing = self.listings.get(&listing_id.0).cloned().unwrap_or_else(|| env::panic_str("Listing not found"));
         require!(listing.status.fillable(), "Listing not fillable");
@@ -633,7 +716,7 @@ impl Contract {
 
     #[private]
     pub fn on_fees_withdrawn(&mut self, amount: U128) -> bool {
-        if env::promise_result_checked(0, 64).is_ok() {
+        if promise_succeeded() {
             return true;
         }
         self.fee_balance += amount.0;
@@ -688,7 +771,8 @@ impl Contract {
             fee_balance: U128(self.fee_balance),
             deposit_fee_bps: self.deposit_fee_bps,
             market_fee_bps: MARKET_FEE_BPS,
-            min_deposit: U128(MIN_DEPOSIT),
+            min_deposit: U128(self.min_deposit),
+            refunds_pending: U128(self.refunds_total),
             paused: self.paused,
             pt_payout_per_unit: settled.then(|| U128(self.pt_payout(YOCTO))),
             yt_payout_per_unit: settled.then(|| U128(self.yt_payout(YOCTO))),
@@ -754,17 +838,33 @@ impl FungibleTokenReceiver for Contract {
     /// Panicking here makes the stNEAR contract refund the sender (NEP-141).
     fn ft_on_transfer(&mut self, sender_id: AccountId, amount: U128, msg: String) -> PromiseOrValue<U128> {
         require!(env::predecessor_account_id() == self.underlying, "Only the underlying stNEAR can be deposited");
-        require!(!self.paused, "Deposits are paused");
-        require!(env::block_timestamp() < self.deposits_close_at, "Deposits closed");
-        require!(amount.0 >= MIN_DEPOSIT, "Below minimum deposit");
-        if let Some(cap) = self.deposit_cap {
-            require!(self.total_deposited + amount.0 <= cap, "Deposit cap reached");
-        }
-        let receiver_id = if msg.trim().is_empty() {
-            sender_id.clone()
+        let routed = if msg.trim().is_empty() {
+            None
         } else {
-            serde_json::from_str::<DepositMsg>(&msg).unwrap_or_else(|_| env::panic_str("Invalid deposit msg")).receiver_id
+            Some(serde_json::from_str::<DepositMsg>(&msg).unwrap_or_else(|_| env::panic_str("Invalid deposit msg")).receiver_id)
         };
+        if let Some(r) = &routed {
+            require!(*r != env::current_account_id() && *r != self.underlying, "Invalid receiver");
+        }
+        if let Some(reason) = self.deposit_refusal(amount.0) {
+            match routed {
+                // Direct deposit: panic, and the stNEAR contract returns the tokens to the sender's wallet.
+                None => env::panic_str(reason),
+                // Routed deposit (e.g. NEAR Intents): a refund would go to the router, not the user. Keep the
+                // stNEAR for the receiver instead; they withdraw it with `claim_refund`.
+                Some(receiver_id) => {
+                    // Dust is not held: each refund entry costs the series storage, so a refund must at
+                    // least clear the absolute 0.01 stNEAR floor. Below it the transfer is refused outright.
+                    require!(amount.0 >= MIN_DEPOSIT, reason);
+                    let held = self.refunds.get(&receiver_id).copied().unwrap_or(0);
+                    self.refunds.insert(receiver_id.clone(), held + amount.0);
+                    self.refunds_total += amount.0;
+                    emit_event("deposit_refunded", json!({ "account_id": receiver_id, "sender_id": sender_id, "amount": amount, "reason": reason }));
+                    return PromiseOrValue::Value(U128(0));
+                }
+            }
+        }
+        let receiver_id = routed.unwrap_or_else(|| sender_id.clone());
 
         let fee = mul_div(amount.0, self.deposit_fee_bps as u128, BPS);
         let net = amount.0 - fee;
@@ -840,8 +940,11 @@ impl StorageManagement for Contract {
     }
 
     #[payable]
+    #[allow(unused_variables)]
     fn storage_unregister(&mut self, force: Option<bool>) -> bool {
-        self.yt.internal_storage_unregister(force).is_some()
+        // The contract pays the storage of accounts it registers on deposit and in `buy`; refunding that on
+        // unregister would let anyone drain it, and force-unregister would also strand burned YT's backing.
+        env::panic_str("Unregistering is disabled: PT, YT and refund records stay with the account")
     }
 
     fn storage_balance_bounds(&self) -> StorageBalanceBounds {

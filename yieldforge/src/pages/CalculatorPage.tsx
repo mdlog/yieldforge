@@ -7,6 +7,7 @@ import { useLiveListings } from '@/hooks/useLiveData'
 import { demoInputs, listings as demoListings } from '@/lib/demoData'
 import { isLiveMode } from '@/lib/near/wallet'
 import { isBuyable } from '@/lib/contracts/marketplace'
+import { useStakingApr } from '@/hooks/useStakingApr'
 import { buildScenarioRows, DEPOSIT_FEE_BPS, formatBps, MARKET_FEE_BPS } from '@/utils/math'
 import { formatNear, formatYoctoInput, parseNear, toBigInt } from '@/utils/format'
 
@@ -28,6 +29,7 @@ export default function CalculatorPage() {
   const navigate = useNavigate()
   const live = isLiveMode()
   const { display: series } = useSeriesDisplay()
+  const staking = useStakingApr()
   const listingsQuery = useLiveListings()
   // Live inputs start empty or come from the chain; only the demo walkthrough is prefilled with demo values.
   const [amount, setAmount] = useState(live ? '' : demoInputs.depositAmount)
@@ -68,7 +70,8 @@ export default function CalculatorPage() {
   const buyerCost = proceeds * (1 + feeRate)
   const illustrativeYield = Math.max(0, rt - r0) * ytUnits
   const buyerDelta = illustrativeYield - buyerCost
-  const scenarios = r0 > 0 ? buildScenarioRows(r0, ytUnits, buyerCost) : []
+  // Reference rows run the staking APR one point either side of today's over the series term, from the baseline above.
+  const scenarios = r0 > 0 ? buildScenarioRows({ r0, rateNow: r0, aprPercent: staking.aprPercent, daysLeft: series?.termDays ?? 30, ytQuantity: ytUnits, costNear: buyerCost }) : []
 
   return (
     <>
@@ -170,7 +173,7 @@ export default function CalculatorPage() {
         <SectionHeading
           eyebrow="Reference scenarios"
           title="One assumption at a time"
-          description="Rows shift the baseline above by a fixed percentage for your YT quantity. They do not forecast the future."
+          description={`Rows run the staking APR one point either side of today's ${staking.aprPercent.toFixed(1)}% over the ${series?.termDays ?? 30}-day term, from the baseline above, for your YT quantity. They do not forecast the future.`}
           action={
             <button className="text-link" onClick={() => navigate('/series')}>
               See rate history <ArrowUpRight size={13} aria-hidden />
@@ -192,7 +195,7 @@ export default function CalculatorPage() {
               </span>
               <strong>{row.rate.toFixed(4)}</strong>
               <span>{formatNear(row.yield, 2)}</span>
-              <span className="scenario-comment">{row.tone === 'risk' ? 'YT can pay zero' : row.tone === 'muted' ? 'No positive appreciation' : 'User-entered illustration'}</span>
+              <span className="scenario-comment">{row.tone === 'risk' ? 'YT can pay zero' : row.tone === 'muted' ? 'Staking pays less' : row.tone === 'positive' ? 'Staking pays more' : 'At today\'s APR'}</span>
             </div>
           ))}
         </div>
