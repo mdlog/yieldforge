@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { NearConnector } from '@hot-labs/near-connect'
 import { getNearConfig } from '@/lib/near/config'
+import { isWalletRejection } from '@/lib/near/outcome'
 
 type SignResult = { transaction: { hash: string } } & Record<string, unknown>
 type SignRequest = { receiverId: string; actions: unknown[] }
@@ -15,6 +16,14 @@ interface WalletContextValue {
 }
 
 const WalletContext = createContext<WalletContextValue | null>(null)
+
+/**
+ * NEAR Connect fetches its wallet list from GitHub (jsDelivr as fallback) with no timeout, and never settles if that
+ * list is malformed. Past this the button stops waiting: the session restore still lands if it resolves later, and a
+ * click without a wallet list does nothing rather than leaving the button stuck on "Connecting…".
+ */
+const WALLET_LIST_WAIT_MS = 8_000
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
 /**
  * Test-only wallet injection (window.__YF_MOCK_WALLET) for headless checks.
@@ -56,8 +65,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         }
         setConnector(c)
         // Restore the session from the last visit; throws when nobody is signed in.
-        const restored = await c.getConnectedWallet().catch(() => null)
-        if (!cancelled && restored) setAccount(restored.accounts[0]?.accountId ?? null)
+        const restoring = c
+          .getConnectedWallet()
+          .then(({ accounts }) => {
+            if (!cancelled) setAccount(accounts[0]?.accountId ?? null)
+          })
+          .catch(() => {})
+        await Promise.race([restoring, sleep(WALLET_LIST_WAIT_MS)])
       })
       .catch((e: unknown) => console.error('[NearConnect] init failed', e))
       .finally(() => {
@@ -79,16 +93,28 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       console.warn('NEAR Connect not ready')
       return
     }
+    const quiet = (e: unknown) => {
+      // Closing the picker ("User rejected") or the wallet window ("Wallet closed") is a cancel, not a failure.
+      if (!isWalletRejection(e instanceof Error ? e.message : String(e))) console.error('Wallet connect failed', e)
+    }
+    // "Connecting…" covers the picker only. The wallet's own sign-in window can take as long as the user needs, and
+    // NEAR Connect never settles it if that window is closed before the wallet loads, so it must not hold the button.
     setIsConnecting(true)
+    let walletId: string
     try {
-      // Opens the wallet picker; the wallet:signIn event sets the account.
-      await connector.connect()
+      const listed = await Promise.race([connector.whenManifestLoaded.then(() => true, () => true), sleep(WALLET_LIST_WAIT_MS).then(() => false)])
+      if (!listed) {
+        console.warn('NEAR Connect: the wallet list did not load')
+        return
+      }
+      walletId = await connector.selectWallet()
     } catch (e) {
-      // Closing the picker rejects with "User rejected"; that is a cancel, not a failure.
-      if (!(e instanceof Error && /rejected/i.test(e.message))) console.error('Wallet connect failed', e)
+      return quiet(e)
     } finally {
       setIsConnecting(false)
     }
+    // Signs in with the chosen wallet; the wallet:signIn event sets the account.
+    await connector.connect({ walletId }).catch(quiet)
   }, [connector])
 
   const signAndSendTransaction = useCallback(

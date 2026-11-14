@@ -1,6 +1,6 @@
 import { viewCall } from '@/lib/near/wallet'
 import { getNearConfig } from '@/lib/near/config'
-import { decodeSuccessValue } from '@/lib/near/outcome'
+import { decodeSuccessValue, isWalletRejection } from '@/lib/near/outcome'
 
 export type TxPhase = 'idle' | 'awaiting_signature' | 'submitted' | 'confirmed' | 'failed' | 'indexing'
 
@@ -182,9 +182,7 @@ export function isOnChainFailure(errStr: string): boolean {
  */
 export function friendlyTxError(errStr: string): string {
   const low = errStr.toLowerCase()
-  if (low.includes('reject') || low.includes('abort') || (low.includes('cancel') && !low.includes('publishing_transaction_failed'))) {
-    return 'Transaction was rejected in wallet.'
-  }
+  if (isWalletRejection(errStr)) return 'Transaction was rejected in wallet.'
   if (!isOnChainFailure(errStr)) return errStr
 
   // Specific panic messages first: contract logs (e.g. "listing status PartiallyFilled") can precede them.

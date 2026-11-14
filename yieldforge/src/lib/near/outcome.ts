@@ -30,3 +30,13 @@ export function panicMessage(error: string): string | null {
   const match = /Smart contract panicked: ([^"\\]+)/.exec(error)
   return match ? match[1]!.trim() : null
 }
+
+/**
+ * True when the wallet, not the chain, ended the request: the user rejected it, cancelled it, or closed the NEAR Connect
+ * wallet window or picker ("Wallet closed", "User rejected"). A failed broadcast that mentions cancelling is not one.
+ */
+export function isWalletRejection(errStr: string): boolean {
+  const low = errStr.toLowerCase()
+  if (low.includes('publishing_transaction_failed')) return false
+  return low.includes('reject') || low.includes('abort') || low.includes('cancel') || low.includes('wallet closed')
+}

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { decodeSuccessValue, ftTransferCallUsed, panicMessage } from '../src/lib/near/outcome.ts';
+import { decodeSuccessValue, ftTransferCallUsed, isWalletRejection, panicMessage } from '../src/lib/near/outcome.ts';
 
 describe('reading a transaction outcome', () => {
   it('decodes the base64 SuccessValue', () => {
@@ -23,5 +23,20 @@ describe('reading a transaction outcome', () => {
     const failure = JSON.stringify({ ActionError: { index: 0, kind: { FunctionCallError: { ExecutionError: 'Smart contract panicked: Deposits closed' } } } });
     assert.equal(panicMessage(failure), 'Deposits closed');
     assert.equal(panicMessage('Exceeded the prepaid gas.'), null);
+  });
+});
+
+describe('telling a wallet cancel from a failure', () => {
+  it('treats closing the NEAR Connect wallet window or picker as a cancel', () => {
+    // stringifyError(new Error('Wallet closed')) as NEAR Connect 0.12 rejects when the wallet popup is closed.
+    assert.equal(isWalletRejection('{} Wallet closed'), true);
+    assert.equal(isWalletRejection('{} User rejected'), true);
+    assert.equal(isWalletRejection('User cancelled the request'), true);
+  });
+
+  it('does not hide real failures', () => {
+    assert.equal(isWalletRejection('{} No accounts found'), false);
+    assert.equal(isWalletRejection('Smart contract panicked: Deposits closed'), false);
+    assert.equal(isWalletRejection('PUBLISHING_TRANSACTION_FAILED: cancelled by timeout'), false);
   });
 });
