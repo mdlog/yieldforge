@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ArrowRight, Globe2 } from 'lucide-react'
+import { ArrowDown, ArrowRight } from 'lucide-react'
 import { Button, TokenBadge, TxFeedback } from '@/components/ui'
 import { AssetPicker } from '@/components/intents/AssetPicker'
 import { FundsTracker } from '@/components/intents/FundsTracker'
@@ -47,10 +47,10 @@ import { buyCost, formatBps, previewDeposit } from '@/utils/math'
 import { formatYocto, formatYoctoInput, parseNear, shorten } from '@/utils/format'
 
 type Tab = SwapFlow
-const TABS: Array<{ id: Tab; label: string; blurb: string }> = [
-  { id: 'deposit', label: 'Deposit', blurb: 'Any asset → PT + YT' },
-  { id: 'buy-yt', label: 'Buy YT', blurb: 'Pay from any chain' },
-  { id: 'cash-out', label: 'Cash out', blurb: 'stNEAR or NEAR → any chain' },
+const TABS: Array<{ id: Tab; label: string }> = [
+  { id: 'deposit', label: 'Deposit' },
+  { id: 'buy-yt', label: 'Buy YT' },
+  { id: 'cash-out', label: 'Cash out' },
 ]
 /** Native NEAR kept back for the buy transaction's gas after unwrapping. */
 const BUY_GAS_RESERVE_YOCTO = 5n * 10n ** 21n
@@ -143,7 +143,7 @@ function needsAttention(s: SwapRecord, now = Date.now()): boolean {
 
 function usd(v: string | number | undefined): string {
   const n = Number(v)
-  return Number.isFinite(n) && n > 0 ? `$${n.toLocaleString('en-US', { maximumFractionDigits: 2 })}` : ''
+  return Number.isFinite(n) && n > 0 ? `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''
 }
 
 function fmtToken(atomic: string | bigint | undefined, decimals: number, frac = 4): string {
@@ -172,30 +172,25 @@ export default function AnyChainPage() {
 
   return (
     <div className="page-wrap earn-page ac-page">
-      <header className="earn-header">
-        <span className="eyebrow eyebrow-lime">
-          <Globe2 size={12} aria-hidden /> NEAR Intents
-        </span>
+      <header className="ac-head">
         <h1 className="ac-title">From any chain</h1>
-        <p className="earn-lead">
-          Bring USDC, ETH, BTC, SOL or 200+ other assets from 25+ chains into a fixed or leveraged stNEAR yield position, and take the proceeds back out, without a
-          bridge UI. Routing and settlement run through NEAR Intents (1Click); you sign once on the chain your money is on.
-        </p>
+        <p className="earn-lead">Use USDC, ETH, BTC, SOL and 200+ other assets from 25+ chains, and cash out to any of them. NEAR Intents handles the routing.</p>
+        {!intentsLive && (
+          <p className="ac-preview">
+            <span className="ac-preview-dot" aria-hidden />
+            <span>
+              Preview on {isLiveMode() ? cfg.network : 'demo data'}: live mainnet quotes, nothing is sent. Swaps run on mainnet.
+            </span>
+          </p>
+        )}
       </header>
 
-      {!intentsLive && (
-        <p className="earn-note">
-          <strong>Preview mode.</strong> NEAR Intents only settles on NEAR mainnet, and this app is running on {isLiveMode() ? cfg.network : 'demo data'}. Prices below are
-          live mainnet quotes (dry runs: nothing is reserved or sent). The send buttons switch on in the mainnet build.
-        </p>
-      )}
       {tokensError && <p className="earn-note earn-note-warn">Could not load the asset list from NEAR Intents: {tokensError}</p>}
 
       <div className="ac-tabs" role="tablist" aria-label="Flow">
         {TABS.map((t) => (
           <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'is-on' : undefined} onClick={() => setTab(t.id)}>
-            <strong>{t.label}</strong>
-            <small>{t.blurb}</small>
+            {t.label}
           </button>
         ))}
       </div>
@@ -213,7 +208,7 @@ export default function AnyChainPage() {
 
       {mine.length > 0 && (
         <section className="earn-card">
-          <h2 className="earn-card-title">Your cross-chain swaps (this browser)</h2>
+          <h2 className="earn-card-title">Recent swaps in this browser</h2>
           <ul className="ac-history">
             {mine.map((s) => {
               const st = trackerState(s.status)
@@ -250,31 +245,30 @@ export default function AnyChainPage() {
         </section>
       )}
 
-      <section className="earn-card ac-facts">
-        <h2 className="earn-card-title">Read before you send</h2>
+      <details className="buy-details ac-facts">
+        <summary>Before you send</summary>
         <ul>
           <li>
-            <strong>The fixed rate is in NEAR terms.</strong> Your USDC becomes stNEAR. Selling the YT locks the stNEAR-to-NEAR return, not a dollar return: until you cash
+            <strong>The fixed rate is in NEAR terms.</strong> Your USDC becomes stNEAR. Selling the YT locks the stNEAR-to-NEAR return, not a dollar return; until you cash
             out, you hold NEAR price exposure.
           </li>
           <li>
-            <strong>Costs.</strong> 1Click charges 0.2% plus the solver's spread, and some routes have a small withdrawal fee. Every quote above already includes them. Origin-chain
-            gas is extra. Coming in and cashing out each cost about that much, so on a short term a small position can lose more on the round trip than the yield pays; the
-            deposit tab shows the comparison for your amount.
+            <strong>Costs.</strong> 1Click charges 0.2% plus the solver's spread, and some routes add a withdrawal fee. Quotes include them; origin-chain gas is extra. Coming in
+            and cashing out each cost about that much, so on a short term a small position can lose more on the round trip than the yield pays.
           </li>
           <li>
-            <strong>YT sales pay NEAR, redemptions pay stNEAR.</strong> Cash out either from the Cash out tab.
+            <strong>YT sales pay NEAR, redemptions pay stNEAR.</strong> Cash out either one from the Cash out tab.
           </li>
           <li>
-            <strong>Refunds.</strong> If a swap can't be filled before its deadline, 1Click refunds the deposit to the refund address you typed (cash-outs: to your NEAR wallet).
+            <strong>Refunds.</strong> A swap that can't be filled before its deadline is refunded to your refund address (cash-outs: to your NEAR wallet).
           </li>
           <li>
-            <strong>Express deposits</strong> hand the stNEAR to the series in the same settlement (NEAR Intents' custom recipient message). The app only offers it when the series
-            should accept: deposits open well past the expected landing time, room under the deposit cap, and above the minimum. Otherwise it uses Standard. If the series still
-            refuses it (for example the cap fills meanwhile), it keeps the stNEAR for your NEAR account and you claim it from Portfolio. 1Click marks this feature experimental.
+            <strong>Express delivery</strong> sends the stNEAR straight into the series. The app offers it only when the series should accept it (open long enough, room under
+            the deposit cap, above the minimum); otherwise it uses Standard. If the series still refuses it, the stNEAR is held for your NEAR account and you claim it in
+            Portfolio. 1Click marks this feature experimental.
           </li>
         </ul>
-      </section>
+      </details>
     </div>
   )
 }
@@ -293,18 +287,80 @@ function Field({ id, label, children, hint }: { id: string; label: string; child
   )
 }
 
-function AmountInput({ id, value, onChange, unit, onMax, disabled, placeholder = '0.0' }: { id: string; value: string; onChange: (v: string) => void; unit: string; onMax?: () => void; disabled?: boolean; placeholder?: string }) {
+/** One side of the swap: a label row (with an optional note on the right) over an amount and its asset. */
+function SwapBox({ label, htmlFor, aside, children }: { label: string; htmlFor?: string; aside?: ReactNode; children: ReactNode }) {
   return (
-    <div className="earn-input">
-      <input id={id} inputMode="decimal" placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} />
-      <span>{unit}</span>
-      {onMax && (
-        <button type="button" onClick={onMax} disabled={disabled}>
-          Max
-        </button>
-      )}
+    <div className="ac-box">
+      <div className="ac-box-head">
+        {htmlFor ? <label htmlFor={htmlFor}>{label}</label> : <span>{label}</span>}
+        {aside ? <span className="ac-box-aside">{aside}</span> : null}
+      </div>
+      <div className="ac-box-main">{children}</div>
     </div>
   )
+}
+
+function SwapArrow() {
+  return (
+    <div className="ac-swap-arrow" aria-hidden>
+      <ArrowDown size={14} />
+    </div>
+  )
+}
+
+function AmountField({ id, value, onChange, disabled, placeholder = '0' }: { id: string; value: string; onChange: (v: string) => void; disabled?: boolean; placeholder?: string }) {
+  return <input id={id} className="ac-amount" inputMode="decimal" autoComplete="off" placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} />
+}
+
+/** A quoted amount: read-only, dimmed while a fresh quote loads. */
+function QuotedAmount({ loading, className = '', children }: { loading: boolean; className?: string; children: ReactNode }) {
+  return (
+    <output className={`ac-amount ac-amount-out ${className} ${loading ? 'is-loading' : ''}`} aria-live="polite" aria-busy={loading}>
+      {children}
+    </output>
+  )
+}
+
+function MaxButton({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) {
+  return (
+    <button type="button" className="earn-inline" onClick={onClick} disabled={disabled}>
+      Max
+    </button>
+  )
+}
+
+/** Quote details, folded: the summary line stays visible, the rows open on demand. */
+function QuoteDetails({ summary, children }: { summary: string; children: ReactNode }) {
+  return (
+    <details className="ac-details">
+      <summary>
+        <span>{summary}</span>
+        <span className="ac-details-toggle">Details</span>
+      </summary>
+      <dl className="ac-dl">{children}</dl>
+    </details>
+  )
+}
+
+function Row({ k, children }: { k: string; children: ReactNode }) {
+  return (
+    <div>
+      <dt>{k}</dt>
+      <dd>{children}</dd>
+    </div>
+  )
+}
+
+function eta(q: Quote | null): string | null {
+  return q?.timeEstimate ? `~${Math.max(1, Math.round(q.timeEstimate / 60))} min` : null
+}
+
+const trim4 = (s: string) => s.replace(/(\.\d{4})\d+$/, '$1')
+
+/** The folded details' summary: the parts that are known, joined, starting with a capital. */
+function summaryLine(...parts: Array<string | null>): string {
+  const line = parts.filter(Boolean).join(' · ')
+  return line.charAt(0).toUpperCase() + line.slice(1)
 }
 
 function AddressInput({ id, value, onChange, chain, placeholder, disabled }: { id: string; value: string; onChange: (v: string) => void; chain: string; placeholder: string; disabled?: boolean }) {
@@ -316,15 +372,6 @@ function AddressInput({ id, value, onChange, chain, placeholder, disabled }: { i
       </div>
       {bad && <small className="ac-error">That doesn't look like a {chainLabel(chain)} address.</small>}
     </>
-  )
-}
-
-function QuoteLine({ loading, error, children }: { loading: boolean; error: string | null; children: ReactNode }) {
-  if (error) return <p className="earn-note earn-note-warn">{error}</p>
-  return (
-    <div className={`earn-result ac-quote ${loading ? 'is-loading' : ''}`} aria-live="polite" aria-busy={loading}>
-      {children}
-    </div>
   )
 }
 
@@ -459,71 +506,80 @@ function DepositFlow({ tokens, intentsLive, current, onStarted }: { tokens: OneC
 
   if (current) return <DepositTracker rec={current} active={active} select={select} />
 
+  const usdIn = token?.price && atomic ? usd(Number(amount.replace(',', '.')) * token.price) : ''
+  const nearOut = rate && stOut != null ? ` ≈ ${(Number(fromAtomic(stOut, NEAR_DECIMALS, 6)) * rate).toFixed(3)} NEAR` : ''
+
   return (
     <div className="ac-flow">
-      <p className="earn-lead">
-        Send an asset from another chain; it arrives as stNEAR in <strong>{series?.name ?? cfg.seriesContractId}</strong> and you get PT + YT. Then keep both (leveraged yield),
-        or <Link to="/earn?step=sell">sell the YT</Link> to lock a fixed rate.
-      </p>
-      <div className="earn-grid">
-        <AssetPicker id="dep-asset" label="Pay with" tokens={tokens} value={token} onChange={setPicked} excludeChains={['near']} disabled={busy} />
-        <Field id="dep-amount" label="Amount" hint={token && atomic && token.price ? `≈ ${usd(Number(amount.replace(',', '.')) * token.price)}` : undefined}>
-          <AmountInput id="dep-amount" value={amount} onChange={setAmount} unit={token?.symbol ?? ''} disabled={busy} />
-        </Field>
+      <div className="ac-swap">
+        <SwapBox label="You pay" htmlFor="dep-amount" aside={usdIn ? `≈ ${usdIn}` : null}>
+          <AmountField id="dep-amount" value={amount} onChange={setAmount} disabled={busy} />
+          <AssetPicker id="dep-asset" label="Pay with" tokens={tokens} value={token} onChange={setPicked} excludeChains={['near']} disabled={busy} />
+        </SwapBox>
+        <SwapArrow />
+        <SwapBox label="You get" aside={stOut != null ? `${fmtToken(stOut, NEAR_DECIMALS)} stNEAR${nearOut}` : null}>
+          <QuotedAmount loading={preview.loading} className="ac-get">
+            <span className="ac-get-item">
+              <TokenBadge kind="PT" size="sm" />
+              {stOut != null ? formatYocto(minted.pt, 4) : '—'}
+            </span>
+            <span className="ac-plus">+</span>
+            <span className="ac-get-item">
+              <TokenBadge kind="YT" size="sm" />
+              {stOut != null ? formatYocto(minted.yt, 4) : '—'}
+            </span>
+          </QuotedAmount>
+        </SwapBox>
       </div>
-      <QuoteLine loading={preview.loading} error={preview.error}>
-        <span>
-          You get ≈ <strong>{stOut != null ? fmtToken(stOut, NEAR_DECIMALS) : '—'} stNEAR</strong>
-          {rate && stOut != null ? ` (≈ ${(Number(fromAtomic(stOut, NEAR_DECIMALS, 6)) * rate).toFixed(3)} NEAR)` : ''}, then
-        </span>
-        <span className="earn-receive ac-receive">
-          <TokenBadge kind="PT" size="sm" /> <strong>{formatYocto(minted.pt, 4)}</strong>
-          <TokenBadge kind="YT" size="sm" /> <strong>{formatYocto(minted.yt, 4)}</strong>
-        </span>
-        <small>
-          Worst case {preview.quote ? fmtToken(preview.quote.minAmountOut, NEAR_DECIMALS) : '—'} stNEAR at 1% slippage · {formatBps(feeBps)} series deposit fee ·{' '}
-          {preview.quote?.timeEstimate ? `~${Math.max(1, Math.round(preview.quote.timeEstimate / 60))} min` : '—'} · 1Click fee included
-        </small>
-      </QuoteLine>
-      {roundTrip && series?.termDays ? (
-        <p className={`earn-note${roundTrip.costsMoreThanYield ? ' earn-note-warn' : ''} ac-roundtrip`}>
-          <strong>Round trip ≈ {roundTrip.roundTripPct.toFixed(2)}%</strong>: {roundTrip.entryPct.toFixed(2)}% to come in (this quote), about the same to cash out, plus the{' '}
-          {formatBps(feeBps)} deposit fee. The {series.termDays}-day term earns about {roundTrip.termYieldPct.toFixed(2)}% at today's {staking.aprPercent.toFixed(1)}% staking APR.
-          {roundTrip.costsMoreThanYield
-            ? ' At this size the round trip costs more than one term earns: it pays off only if you keep the position over several terms or want the NEAR exposure anyway.'
-            : ''}
+      {preview.error && <p className="earn-note earn-note-warn">{preview.error}</p>}
+      {roundTrip?.costsMoreThanYield && series?.termDays ? (
+        <p className="earn-note earn-note-warn ac-warn">
+          Moving in and out costs about {roundTrip.roundTripPct.toFixed(2)}%, more than this {series.termDays}-day term earns ({roundTrip.termYieldPct.toFixed(2)}%). It pays off
+          over several terms.
         </p>
       ) : null}
 
-      <div className="earn-field">
-        <span className="earn-field-label">Delivery</span>
-        <div className="earn-chips" role="radiogroup" aria-label="Delivery mode">
-          <button type="button" role="radio" aria-checked={mode === 'express'} className={mode === 'express' ? 'is-on' : undefined} onClick={() => setMode('express')} disabled={busy}>
-            Express: straight into the series
-          </button>
-          <button type="button" role="radio" aria-checked={mode === 'standard'} className={mode === 'standard' ? 'is-on' : undefined} onClick={() => setMode('standard')} disabled={busy}>
-            Standard: to my wallet, I deposit
-          </button>
-        </div>
-        <small className="earn-hint">
-          {mode === 'express'
-            ? check && !check.ok
-              ? `Express unavailable: ${check.reasons.join(' ')} Standard will be used.`
-              : 'One transaction on the origin chain. NEAR Intents delivers the stNEAR to the series, which mints PT + YT to your NEAR account.'
-            : 'The stNEAR lands in your NEAR wallet; you sign one deposit on NEAR afterwards. Works even if the series closes meanwhile.'}
-        </small>
-      </div>
+      <QuoteDetails summary={summaryLine(eta(preview.quote), effective === 'express' ? 'Express delivery' : 'Standard delivery', 'fees included')}>
+        <Row k="Series">{series?.name ?? cfg.seriesContractId}</Row>
+        <Row k="Minimum received">{preview.quote ? `${fmtToken(preview.quote.minAmountOut, NEAR_DECIMALS)} stNEAR (1% slippage)` : '—'}</Row>
+        <Row k="Fees">1Click fee included · {formatBps(feeBps)} series deposit fee</Row>
+        {roundTrip && series?.termDays ? (
+          <Row k="Round trip">
+            ≈ {roundTrip.roundTripPct.toFixed(2)}%: {roundTrip.entryPct.toFixed(2)}% in, about the same out, plus the deposit fee. The {series.termDays}-day term earns ≈{' '}
+            {roundTrip.termYieldPct.toFixed(2)}% at {staking.aprPercent.toFixed(1)}% staking APR.
+          </Row>
+        ) : null}
+        <Row k="Delivery">
+          <div className="ac-stack">
+            <div className="earn-chips" role="radiogroup" aria-label="Delivery mode">
+              <button type="button" role="radio" aria-checked={mode === 'express'} className={mode === 'express' ? 'is-on' : undefined} onClick={() => setMode('express')} disabled={busy}>
+                Express
+              </button>
+              <button type="button" role="radio" aria-checked={mode === 'standard'} className={mode === 'standard' ? 'is-on' : undefined} onClick={() => setMode('standard')} disabled={busy}>
+                Standard
+              </button>
+            </div>
+            <span>
+              {mode === 'express'
+                ? check && !check.ok
+                  ? `Express unavailable: ${check.reasons.join(' ')} Standard will be used.`
+                  : 'Straight into the series in one origin-chain transaction; PT + YT are minted to your NEAR account.'
+                : 'The stNEAR lands in your NEAR wallet and you sign the deposit on NEAR. Works even if the series closes meanwhile.'}
+            </span>
+          </div>
+        </Row>
+        <Row k="PT + YT go to">
+          {isConnected ? accountId : 'your connected NEAR account'}. Keep both for leveraged yield, or <Link to="/earn?step=sell">sell the YT</Link> to lock a fixed rate.
+        </Row>
+      </QuoteDetails>
 
-      <Field id="dep-refund" label={`Your ${token ? chainLabel(token.blockchain) : ''} address for refunds`}>
-        <AddressInput id="dep-refund" value={refund} onChange={setRefund} chain={token?.blockchain ?? ''} placeholder="Refunds go here if the swap can't be filled" disabled={busy} />
+      <Field id="dep-refund" label={`Refund address${token ? ` on ${chainLabel(token.blockchain)}` : ''}`}>
+        <AddressInput id="dep-refund" value={refund} onChange={setRefund} chain={token?.blockchain ?? ''} placeholder="Used if the swap can't be filled" disabled={busy} />
       </Field>
-      <p className="earn-hint ac-receiver">
-        PT + YT go to <strong>{isConnected ? accountId : 'your connected NEAR account'}</strong>.
-      </p>
       <label className="earn-check">
         <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} />
         <span>
-          I understand PT is not principal-protected, YT pays nothing if the stNEAR rate doesn't rise, and the position is in NEAR terms. <Link to="/docs#risks">Risks</Link>
+          I understand PT isn't principal-protected, YT can pay nothing, and the position is in NEAR terms. <Link to="/docs#risks">Risks</Link>
         </span>
       </label>
       <div className="earn-actions">
@@ -701,47 +757,50 @@ function BuyYtFlow({ tokens, intentsLive, current, onStarted }: { tokens: OneCli
 
   return (
     <div className="ac-flow">
-      <p className="earn-lead">
-        Buy leveraged stNEAR yield with money that lives on another chain. NEAR Intents delivers exactly the NEAR the purchase needs to your wallet; you then sign the buy on
-        NEAR.
-      </p>
-      <div className="earn-grid">
-        <Field id="buy-listing" label="Listing">
+      <div className="ac-swap">
+        <SwapBox label="You pay" aside={preview.quote?.amountInUsd ? `≈ ${usd(preview.quote.amountInUsd)}` : null}>
+          <QuotedAmount loading={preview.loading}>{preview.quote ? trim4(preview.quote.amountInFormatted) : '—'}</QuotedAmount>
+          <AssetPicker id="buy-asset" label="Pay with" tokens={tokens} value={token} onChange={setPicked} excludeChains={['near']} disabled={busy} />
+        </SwapBox>
+        <SwapArrow />
+        <SwapBox
+          label="You get"
+          htmlFor="buy-qty"
+          aside={
+            ui ? (
+              <>
+                {ui.remaining.toFixed(4)} YT available <MaxButton onClick={() => setQty(fromAtomic(remaining, NEAR_DECIMALS))} disabled={busy} />
+              </>
+            ) : null
+          }
+        >
+          <AmountField id="buy-qty" value={qty} onChange={setQty} placeholder={listing ? fromAtomic(remaining, NEAR_DECIMALS, 4) : '0'} disabled={busy || !listing} />
           <div className="ac-picker">
-            <select id="buy-listing" value={listing?.listingId ?? ''} onChange={(e) => setListingId(e.target.value)} disabled={busy || !buyable.length}>
-              {!isLiveMode() && <option>Demo mode: no live listings</option>}
-              {buyable.map((l) => {
-                const u = toUiListing(l)
-                return (
-                  <option key={l.listingId} value={l.listingId}>
-                    #{l.listingId} · {u.remaining.toFixed(4)} YT at {u.unitPrice.toFixed(4)} NEAR
-                  </option>
-                )
-              })}
+            <select aria-label="Listing" value={listing?.listingId ?? ''} onChange={(e) => setListingId(e.target.value)} disabled={busy || !buyable.length}>
+              {!isLiveMode() && <option>Demo: no live listings</option>}
+              {buyable.map((l) => (
+                <option key={l.listingId} value={l.listingId}>
+                  YT · #{l.listingId} at {toUiListing(l).unitPrice.toFixed(4)} NEAR
+                </option>
+              ))}
             </select>
           </div>
-        </Field>
-        <Field id="buy-qty" label="YT to buy" hint={ui ? `${ui.remaining.toFixed(4)} available` : undefined}>
-          <AmountInput id="buy-qty" value={qty} onChange={setQty} unit="YT" placeholder={listing ? fromAtomic(remaining, NEAR_DECIMALS, 4) : '0.0'} onMax={listing ? () => setQty(fromAtomic(remaining, NEAR_DECIMALS)) : undefined} disabled={busy || !listing} />
-        </Field>
+        </SwapBox>
       </div>
       {tooMuch && <p className="ac-error">The listing only has {formatYocto(remaining, 4)} YT left.</p>}
-      <AssetPicker id="buy-asset" label="Pay with" tokens={tokens} value={token} onChange={setPicked} excludeChains={['near']} disabled={busy} />
-      <QuoteLine loading={preview.loading} error={preview.error}>
-        <span>
-          You pay ≈{' '}
-          <strong>
-            {preview.quote ? `${preview.quote.amountInFormatted.replace(/(\.\d{4})\d+$/, '$1')} ${token?.symbol ?? ''}` : '—'}
-          </strong>{' '}
-          {preview.quote?.amountInUsd ? `(${usd(preview.quote.amountInUsd)})` : ''}
-        </span>
-        <small>
-          Delivers {cost ? formatYocto(cost.total, 4) : '—'} NEAR for the YT (incl. {formatBps(series?.marketFeeBps ?? 25n)} market fee)
-          {(storage.data ?? 0n) > 0n ? ` + ${formatYocto(storage.data!, 4)} one-time YT registration` : ''} + 0.03 NEAR for gas, to your wallet · leftover input is refunded
-        </small>
-      </QuoteLine>
-      <Field id="buy-refund" label={`Your ${token ? chainLabel(token.blockchain) : ''} address for refunds`}>
-        <AddressInput id="buy-refund" value={refund} onChange={setRefund} chain={token?.blockchain ?? ''} placeholder="Refunds go here if the swap can't be filled" disabled={busy} />
+      {preview.error && <p className="earn-note earn-note-warn">{preview.error}</p>}
+
+      <QuoteDetails summary={summaryLine(eta(preview.quote), 'then you sign the buy on NEAR')}>
+        <Row k="Delivered to you">
+          {cost ? formatYocto(cost.total, 4) : '—'} NEAR for the YT, incl. {formatBps(series?.marketFeeBps ?? 25n)} market fee
+        </Row>
+        {(storage.data ?? 0n) > 0n ? <Row k="YT registration">{formatYocto(storage.data!, 4)} NEAR, one time</Row> : null}
+        <Row k="Gas">0.03 NEAR, delivered with it</Row>
+        <Row k="Leftovers">Any unused input is refunded</Row>
+      </QuoteDetails>
+
+      <Field id="buy-refund" label={`Refund address${token ? ` on ${chainLabel(token.blockchain)}` : ''}`}>
+        <AddressInput id="buy-refund" value={refund} onChange={setRefund} chain={token?.blockchain ?? ''} placeholder="Used if the swap can't be filled" disabled={busy} />
       </Field>
       <div className="earn-actions">
         <StartButton intentsLive={intentsLive} ready={!!need && !tooMuch && refundOk && !!preview.quote} busy={busy} onClick={() => void start()}>
@@ -899,50 +958,50 @@ function CashOutFlow({ tokens, intentsLive, current, onStarted }: { tokens: OneC
 
   return (
     <div className="ac-flow">
-      <p className="earn-lead">
-        Turn stNEAR (from a redemption in <Link to="/portfolio">Portfolio</Link>) or NEAR (from selling YT) into USDC, ETH, BTC or anything else, delivered on its own
-        chain. One NEAR transaction.
-      </p>
-      <div className="earn-field">
-        <span className="earn-field-label">Cash out</span>
-        <div className="earn-chips" role="radiogroup" aria-label="Asset to cash out">
-          {(['stnear', 'near'] as const).map((k) => (
-            <button key={k} type="button" role="radio" aria-checked={source === k} className={source === k ? 'is-on' : undefined} onClick={() => setSource(k)} disabled={busy}>
-              {k === 'near' ? 'NEAR (YT sale proceeds)' : 'stNEAR (redemptions)'}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="earn-grid">
-        <Field
-          id="out-amount"
-          label={`${unit} to cash out`}
-          hint={balance != null ? `${source === 'near' ? 'Spendable' : 'Wallet'}: ${formatYocto(balance, 4)} ${unit}${source === 'near' ? ' (0.05 kept for gas)' : ''}` : 'Connect a wallet to see your balance'}
+      <div className="ac-swap">
+        <SwapBox
+          label="You send"
+          htmlFor="out-amount"
+          aside={
+            balance != null ? (
+              <>
+                {source === 'near' ? 'Spendable' : 'Wallet'} {formatYocto(balance, 4)} {balance > 0n && <MaxButton onClick={() => setAmount(fromAtomic(balance, NEAR_DECIMALS))} disabled={busy} />}
+              </>
+            ) : null
+          }
         >
-          <AmountInput id="out-amount" value={amount} onChange={setAmount} unit={unit} onMax={balance ? () => setAmount(fromAtomic(balance, NEAR_DECIMALS)) : undefined} disabled={busy} />
-        </Field>
-        <AssetPicker id="out-asset" label="Receive" tokens={tokens} value={token} onChange={setPicked} excludeAssetIds={[STNEAR_ASSET_ID, WNEAR_ASSET_ID]} disabled={busy} />
+          <AmountField id="out-amount" value={amount} onChange={setAmount} placeholder="1" disabled={busy} />
+          <div className="ac-picker">
+            <select aria-label="Asset to cash out" value={source} onChange={(e) => setSource(e.target.value as 'stnear' | 'near')} disabled={busy}>
+              <option value="stnear">stNEAR</option>
+              <option value="near">NEAR</option>
+            </select>
+          </div>
+        </SwapBox>
+        <SwapArrow />
+        <SwapBox label="You receive" aside={preview.quote?.amountOutUsd ? `≈ ${usd(preview.quote.amountOutUsd)}` : null}>
+          <QuotedAmount loading={preview.loading}>{preview.quote ? trim4(preview.quote.amountOutFormatted) : '—'}</QuotedAmount>
+          <AssetPicker id="out-asset" label="Receive" tokens={tokens} value={token} onChange={setPicked} excludeAssetIds={[STNEAR_ASSET_ID, WNEAR_ASSET_ID]} disabled={busy} />
+        </SwapBox>
       </div>
       {over && <p className="ac-error">That is more {unit} than your wallet {source === 'near' ? 'can spare' : 'holds'}.</p>}
-      <QuoteLine loading={preview.loading} error={preview.error}>
-        <span>
-          {amount.trim() ? 'You receive' : `1 ${unit} gets`} ≈{' '}
-          <strong>
-            {preview.quote ? `${preview.quote.amountOutFormatted.replace(/(\.\d{4})\d+$/, '$1')} ${token?.symbol ?? ''}` : '—'}
-          </strong>{' '}
-          {preview.quote?.amountOutUsd ? `(${usd(preview.quote.amountOutUsd)})` : ''} {token ? `on ${chainLabel(token.blockchain)}` : ''}
-        </span>
-        <small>
-          Worst case {preview.quote ? preview.quote.minAmountOut && token ? fmtToken(preview.quote.minAmountOut, token.decimals) : '—' : '—'} at 1% slippage · 1Click fee included ·
-          destination withdrawal fee may apply
-        </small>
-      </QuoteLine>
-      <Field id="out-recipient" label={`${token ? chainLabel(token.blockchain) : 'Destination'} address that receives it`}>
+      {preview.error && <p className="earn-note earn-note-warn">{preview.error}</p>}
+
+      <QuoteDetails summary={summaryLine(eta(preview.quote), 'one NEAR transaction', 'fees included')}>
+        <Row k="Minimum received">{preview.quote?.minAmountOut && token ? `${fmtToken(preview.quote.minAmountOut, token.decimals)} ${token.symbol} (1% slippage)` : '—'}</Row>
+        <Row k="Fees">1Click fee included; the destination chain may charge a withdrawal fee</Row>
+        {source === 'near' ? <Row k="Kept for gas">0.05 NEAR stays in your wallet</Row> : null}
+        <Row k="What to send">
+          stNEAR from a redemption in <Link to="/portfolio">Portfolio</Link>, or NEAR from selling YT
+        </Row>
+        <Row k="Refunds">
+          Return as {source === 'near' ? 'wNEAR' : 'stNEAR'} to {accountId ?? 'your NEAR wallet'}
+        </Row>
+      </QuoteDetails>
+
+      <Field id="out-recipient" label={`Receiving address${token ? ` on ${chainLabel(token.blockchain)}` : ''}`}>
         <AddressInput id="out-recipient" value={recipient} onChange={setRecipient} chain={token?.blockchain ?? ''} placeholder="Where the funds should arrive" disabled={busy} />
       </Field>
-      <small className="earn-hint">
-        Refunds, if any, return as {source === 'near' ? 'wNEAR (unwrap it on Buy YT or any wallet)' : 'stNEAR'} to {accountId ?? 'your NEAR wallet'}.
-      </small>
       <TxFeedback tx={cashTx} failedTitle="Transfer failed" successTitle={`${unit} sent to NEAR Intents`} />
       {cashTx.phase === 'idle' && (
         <div className="earn-actions">
