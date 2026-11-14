@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { breakEvenApr, buildScenarioRows, fairYtPrice, feeBpsFromTotals, filledVolumeYocto, listingExpiryOptions, lockedApr, previewDeposit, previewRedemption, projectPayout, stakeMintYocto, zapDepositYocto } from '../src/utils/math.ts';
+import { breakEvenApr, buildScenarioRows, fairYtPrice, feeBpsFromTotals, filledVolumeYocto, listingExpiryOptions, lockedApr, previewDeposit, previewRedemption, projectPayout, stakeMintYocto, zapDepositYocto, zapStakeDepositYocto } from '../src/utils/math.ts';
 import { formatYoctoInput } from '../src/utils/format.ts';
 
 describe('redemption preview', () => {
@@ -206,5 +206,21 @@ describe('stake and deposit in one transaction', () => {
     const later = price + price / 20_000n;
     assert.ok(stakeMintYocto(5n * Y, later) >= deposit);
     assert.equal(zapDepositYocto(10_000n), 9_999n);
+  });
+
+  // Mainnet tx AtYdqEyDmYLajZwQbxF7c4QMbgjk3s21FjqjHHNsZknP: an unregistered wallet staked 1.6 NEAR; Meta Pool took
+  // 0.00125 NEAR for its storage, staked 1.59875 and minted 1.055076… stNEAR, and the transfer of 1.055795… reverted.
+  it('leaves Meta Pool its storage fee when the wallet is not registered yet', () => {
+    const price = 1515293559525152197560240n;
+    const minted = 1055076087369499914916913n;
+    const fee = 1_250_000_000_000_000_000_000n;
+    assert.ok(zapDepositYocto(stakeMintYocto(1_600_000n * 10n ** 18n, price)) > minted); // the old amount overdraws
+    const deposit = zapStakeDepositYocto(1_600_000n * 10n ** 18n, price, fee);
+    assert.ok(deposit <= minted);
+    assert.ok(minted - deposit < minted / 5_000n);
+    // A registered wallet pays nothing extra.
+    assert.equal(zapStakeDepositYocto(5n * Y, price, 0n), zapDepositYocto(stakeMintYocto(5n * Y, price)));
+    assert.equal(zapStakeDepositYocto(fee, price, fee), 0n);
+    assert.equal(zapStakeDepositYocto(fee / 2n, price, fee), 0n);
   });
 });

@@ -149,6 +149,15 @@ export function stakeMintYocto(nearYocto: bigint, priceScaled: bigint): bigint {
 }
 
 /**
+ * stNEAR to deposit when staking `nearYocto` and depositing in one transaction. A wallet Meta Pool has not
+ * registered yet pays the storage minimum out of the attached NEAR (`storageFeeYocto`, 0 once registered), so
+ * only the rest is staked; pricing the full amount would transfer more than was minted and revert everything.
+ */
+export function zapStakeDepositYocto(nearYocto: bigint, priceScaled: bigint, storageFeeYocto: bigint): bigint {
+  return nearYocto > storageFeeYocto ? zapDepositYocto(stakeMintYocto(nearYocto - storageFeeYocto, priceScaled)) : 0n
+}
+
+/**
  * stNEAR to deposit in a stake-and-deposit transaction: the minted amount less 0.01%, which stays in the
  * wallet. The price can tick up between reading it and the transaction running (about 0.005% an epoch on
  * mainnet); without the margin the transfer could then exceed what was minted and the whole transaction

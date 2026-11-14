@@ -9,7 +9,7 @@ import { useSeries, withSeries } from '@/contexts/SeriesContext'
 import { getNearConfig } from '@/lib/near/config'
 import { isLiveMode } from '@/lib/near/wallet'
 import { buildDepositTx, buildStakeAndDepositTx } from '@/lib/contracts/series'
-import { buildStakeTx, getStNearPrice, MIN_STAKE_YOCTO } from '@/lib/contracts/metapool'
+import { buildStakeTx, getStakeStorageFee, getStNearPrice, MIN_STAKE_YOCTO } from '@/lib/contracts/metapool'
 import { buildCreateListingTx } from '@/lib/contracts/marketplace'
 import { ftTransferCallUsed, panicMessage } from '@/lib/near/outcome'
 import { useTx, type OutcomeCheck } from '@/hooks/useTx'
@@ -17,7 +17,7 @@ import { useLivePosition, useNearBalance, useStNearBalance, useStNearPrice } fro
 import { useSeriesDisplay } from '@/hooks/useSeriesDisplay'
 import { bySchedule, tenorLabel, useAllSeries } from '@/hooks/useAllSeries'
 import { useStakingApr } from '@/hooks/useStakingApr'
-import { DEPOSIT_FEE_BPS, MARKET_FEE_BPS, buyCost, fairYtPrice, formatBps, listingExpiryOptions, lockedApr, previewDeposit, stakeMintYocto, zapDepositYocto } from '@/utils/math'
+import { DEPOSIT_FEE_BPS, MARKET_FEE_BPS, buyCost, fairYtPrice, formatBps, listingExpiryOptions, lockedApr, previewDeposit, stakeMintYocto, zapDepositYocto, zapStakeDepositYocto } from '@/utils/math'
 import { formatDate, formatYocto, formatYoctoInput, msToNanos, parseNear, toBigInt } from '@/utils/format'
 
 type StepId = 'stake' | 'deposit' | 'sell'
@@ -183,10 +183,14 @@ export default function EarnPage() {
       if (await zapTx.simulate()) push('Demo stake and deposit confirmed.', 'success')
       return
     }
-    // Price the deposit off a fresh read, right before signing.
-    const fresh = await getStNearPrice().then(BigInt).catch(() => null)
-    if (!fresh) return push('Could not read the stNEAR price. Try again.')
-    const amount = zapDepositYocto(stakeMintYocto(stakeYocto, fresh))
+    // Price the deposit off fresh reads, right before signing: the stNEAR price, and the storage fee Meta Pool
+    // keeps from the stake if this wallet isn't registered with it yet.
+    const [fresh, storageFee] = await Promise.all([
+      getStNearPrice().then(BigInt).catch(() => null),
+      accountId ? getStakeStorageFee(accountId).catch(() => null) : null,
+    ])
+    if (!fresh || storageFee === null) return push('Could not read the stNEAR price or your Meta Pool registration. Try again.')
+    const amount = zapStakeDepositYocto(stakeYocto, fresh, storageFee)
     if (amount < minDeposit) return push(`That stakes too little to deposit; the minimum deposit is ${formatYoctoInput(minDeposit)} stNEAR.`)
     const hash = await zapTx.execute(
       buildStakeAndDepositTx({ nearYocto: stakeYocto.toString(), depositYocto: amount.toString() }),
