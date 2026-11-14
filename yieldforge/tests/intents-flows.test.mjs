@@ -13,8 +13,10 @@ import {
   expressCheck,
   fromAtomic,
   looksLikeAddress,
+  nearPerStNear,
   pruneSwaps,
   roundTripEstimate,
+  stNearUsd,
   trackerState,
   toAtomic,
   upsertSwap,
@@ -257,5 +259,24 @@ describe('round-trip cost against what the term earns', () => {
   });
   it('returns null without prices', () => {
     assert.equal(roundTripEstimate({ usdIn: 0, usdOut: 5, depositFeeBps: 25n, aprPercent: 6, termDays: 30 }), null);
+  });});
+
+describe('stNEAR valued at Meta Pool rate', () => {
+  // get_st_near_price on meta-pool.near, 2026-11-14: 1.51520324171 NEAR per stNEAR.
+  const PRICE = '1515203241710000000000000';
+  it('reads NEAR per stNEAR from the yocto price', () => {
+    assert.ok(Math.abs(nearPerStNear(PRICE) - 1.51520324171) < 1e-11);
+    assert.ok(Math.abs(nearPerStNear(10n ** 24n) - 1) < 1e-12);
+  });
+  it('values stNEAR through NEAR, not through a rounded stNEAR price', () => {
+    const st = 4922446244349848319191553n; // the 25 USDC quote that day
+    const usd = stNearUsd(st, PRICE, 3.32);
+    assert.ok(Math.abs(usd - 4.922446244 * 1.51520324171 * 3.32) < 1e-6);
+    // 1Click's own figure, 4.9224 x $5.00 = $24.61, understated it by about 0.6%.
+    assert.ok(usd > 24.7 && usd < 24.8);
+  });
+  it('feeds a believable entry cost to the round trip', () => {
+    const e = roundTripEstimate({ usdIn: 24.990675, usdOut: stNearUsd(4922446244349848319191553n, PRICE, 3.32), depositFeeBps: 1n, aprPercent: 3.8, termDays: 1 });
+    assert.ok(e.entryPct > 0.8 && e.entryPct < 1.0);
   });
 });

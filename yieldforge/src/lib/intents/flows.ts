@@ -300,6 +300,20 @@ export interface RoundTripEstimate {
  * Rough cost of coming in from another chain and going back out, next to what the term earns. The way out is
  * assumed to cost what the way in did; the deposit fee is charged once. Dollar prices come from 1Click's quote.
  */
+/** NEAR per stNEAR from Meta Pool's `get_st_near_price` (yoctoNEAR per stNEAR). */
+export function nearPerStNear(priceYocto: string | bigint): number {
+  return Number(BigInt(priceYocto) / 10n ** 12n) / 1e12
+}
+
+/**
+ * Dollar value of an stNEAR amount: Meta Pool's rate times NEAR's price. Used instead of 1Click's own stNEAR price,
+ * which lags or is rounded (on 2026-11-14 it read $5.00 against 1.515 NEAR x $3.32 = $5.03), enough to swamp an entry
+ * cost that is itself a fraction of a percent.
+ */
+export function stNearUsd(stNearYocto: bigint, priceYocto: string | bigint, nearUsd: number): number {
+  return (Number(stNearYocto / 10n ** 12n) / 1e12) * nearPerStNear(priceYocto) * nearUsd
+}
+
 export function roundTripEstimate(p: { usdIn: number; usdOut: number; depositFeeBps: bigint; aprPercent: number; termDays: number }): RoundTripEstimate | null {
   if (!(p.usdIn > 0) || !(p.usdOut > 0)) return null
   const entryPct = Math.max(0, (1 - p.usdOut / p.usdIn) * 100)

@@ -86,6 +86,21 @@ export async function fetchRateTrend(network: string, contractId: string): Promi
   return { contractId, aprPercent: (ratio - 1) * (365 / days) * 100, fromMs: from.ms, toMs: to.ms, days }
 }
 
+/**
+ * Meta Pool's current `get_st_near_price` on mainnet (yoctoNEAR per stNEAR). This is the stNEAR NEAR Intents quotes,
+ * whatever network the app itself runs on.
+ */
+export async function fetchReferenceStNearPrice(): Promise<string> {
+  const call = await rpc<{ result: number[] }>('https://rpc.mainnet.fastnear.com', 'query', {
+    request_type: 'call_function',
+    finality: 'final',
+    account_id: REFERENCE_STNEAR,
+    method_name: 'get_st_near_price',
+    args_base64: 'e30=',
+  })
+  return String(JSON.parse(new TextDecoder().decode(new Uint8Array(call.result))))
+}
+
 function readCache(): StakingAprData | null {
   try {
     const raw = sessionStorage.getItem(CACHE_KEY)

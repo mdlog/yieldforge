@@ -29,7 +29,9 @@ import {
   expressCheck,
   fromAtomic,
   looksLikeAddress,
+  nearPerStNear,
   roundTripEstimate,
+  stNearUsd,
   toAtomic,
   trackerState,
   type OneClickToken,
@@ -39,9 +41,10 @@ import {
 import { chainLabel, fetchTokens, getQuote, submitDepositTx } from '@/lib/intents/oneclick'
 import { loadSwaps, removeSwap, saveSwap, subscribeSwaps, type SwapFlow, type SwapRecord } from '@/lib/intents/swapStore'
 import { useTx, type OutcomeCheck } from '@/hooks/useTx'
-import { useLiveListings, useLiveSeries, useStNearBalance, useStNearPrice } from '@/hooks/useLiveData'
+import { useLiveListings, useLiveSeries, useStNearBalance } from '@/hooks/useLiveData'
 import { useSeriesDisplay } from '@/hooks/useSeriesDisplay'
 import { useStakingApr } from '@/hooks/useStakingApr'
+import { fetchReferenceStNearPrice } from '@/lib/near/stakingApr'
 import { useNearQuery } from '@/hooks/useNearQuery'
 import { buyCost, formatBps, previewDeposit } from '@/utils/math'
 import { formatYocto, formatYoctoInput, parseNear, shorten } from '@/utils/format'
@@ -403,7 +406,8 @@ function DepositFlow({ tokens, intentsLive, current, onStarted }: { tokens: OneC
   const { active, select } = useSeries()
   const { display: series } = useSeriesDisplay()
   const raw = useLiveSeries().data
-  const price = useStNearPrice().data
+  // NEAR per stNEAR: Meta Pool's rate on mainnet, because 1Click quotes mainnet stNEAR whatever network the app runs on.
+  const stNearPrice = useNearQuery(() => fetchReferenceStNearPrice(), []).data
   const [picked, setPicked] = useState<OneClickToken | null>(null)
   const token = picked ?? defaultOrigin(tokens)
   const [amount, setAmount] = useState('25')
@@ -424,11 +428,8 @@ function DepositFlow({ tokens, intentsLive, current, onStarted }: { tokens: OneC
   const stOut = preview.quote ? BigInt(preview.quote.amountOut) : null
   const feeBps = series?.depositFeeBps ?? 25n
   const minted = previewDeposit(stOut ?? 0n, feeBps)
-  // NEAR per stNEAR. On mainnet, Meta Pool's own rate; in preview mode the app's chain is testnet, whose Meta Pool
-  // rate has nothing to do with the mainnet stNEAR being quoted, so use the 1Click price ratio instead.
-  const stTok = tokens?.find((t) => t.assetId === STNEAR_ASSET_ID)
-  const wTok = tokens?.find((t) => t.assetId === WNEAR_ASSET_ID)
-  const rate = intentsLive && price ? Number(BigInt(price) / 10n ** 16n) / 1e8 : stTok?.price && wTok?.price ? stTok.price / wTok.price : null
+  const rate = stNearPrice ? nearPerStNear(stNearPrice) : null
+  const nearUsd = tokens?.find((t) => t.assetId === WNEAR_ASSET_ID)?.price
 
   const check = useMemo(() => {
     if (!series || !preview.quote) return null
@@ -446,12 +447,13 @@ function DepositFlow({ tokens, intentsLive, current, onStarted }: { tokens: OneC
   }, [series, raw, preview.quote])
   const effective = mode === 'express' && check?.ok ? 'express' : 'standard'
   const refundOk = token ? looksLikeAddress(token.blockchain, refund) : false
-  // What coming in and going back out costs, next to what the series term earns at today's APR.
+  // What coming in and going back out costs, next to what the series term earns at today's APR. The stNEAR side is
+  // valued at Meta Pool's rate; 1Click's own dollar figure is the fallback until that rate is read.
   const staking = useStakingApr()
   const roundTrip = preview.quote
     ? roundTripEstimate({
         usdIn: Number(preview.quote.amountInUsd ?? 0),
-        usdOut: Number(preview.quote.amountOutUsd ?? 0),
+        usdOut: stOut != null && stNearPrice && nearUsd ? stNearUsd(stOut, stNearPrice, nearUsd) : Number(preview.quote.amountOutUsd ?? 0),
         depositFeeBps: feeBps,
         aprPercent: staking.aprPercent,
         termDays: series?.termDays ?? 0,
