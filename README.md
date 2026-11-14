@@ -250,7 +250,7 @@ exposure until they cash out; the page says so before anything is sent. Swaps co
 origin-chain gas, each way: on a 7- or 30-day term a small position can lose more on the round trip than the term pays. The
 cross-chain path makes sense for larger amounts, for several terms in a row, or for someone who wants NEAR exposure anyway.
 
-**Status (2026-11-15).** The flows, the v3 contract (receiver message + cap) and the mainnet build are tested (64 contract unit
+**Status (2026-11-14).** The flows, the v3 contract (receiver message + cap) and the mainnet build are tested (64 contract unit
 tests, 90 frontend tests including `tests/intents-flows.test.mjs`, live dry quotes). The mainnet app is live at
 https://app.yieldforge.mdloglabs.org with one series, `stnear-7d-01.sparecheese3473.near` (see
 [Deployed contracts (NEAR mainnet)](#deployed-contracts-near-mainnet)). The testnet demo keeps showing live dry quotes.
@@ -272,7 +272,7 @@ Underlying: Meta Pool stNEAR, [`meta-v2.pool.testnet`](https://testnet.nearblock
 
 ## Deployed contracts (NEAR mainnet)
 
-App: https://app.yieldforge.mdloglabs.org. Deployed on 2026-11-15 with the v3 wasm (code hash
+App: https://app.yieldforge.mdloglabs.org. Deployed on 2026-11-14 with the v3 wasm (code hash
 `F7zyR7EdNMJHMRbm6Bqp2Z5uvotj5H8yVWojuyRmTcsD`, built by `scripts/build-contract.sh`). The contract is unaudited, so the series is
 capped: at most 50 stNEAR in total, at least 1 stNEAR per deposit. The deposit fee is 0.5 % a year pro-rated to the tenor; the
 market fee is 0.25 %, paid by the buyer.
@@ -433,8 +433,8 @@ in `yieldforge/.env.mainnet.local` (both git-ignored), never in `.env.mainnet`, 
 - **Event:** [NEAR HACKATHON](https://nearhackathon.com), November 2026.
 - **Track:** Unstoppable DeFi (`defi`).
 - **Network:** the judged demo runs on NEAR testnet, which the rules allow for every track (Q-010). The NEAR Intents flows need
-  mainnet (Q-007); on testnet they show live dry quotes. A mainnet app with one capped series was added on 2026-11-15, after
-  the submission deadline: https://app.yieldforge.mdloglabs.org (see [Deployed contracts (NEAR mainnet)](#deployed-contracts-near-mainnet)).
+  mainnet (Q-007); on testnet they show live dry quotes. A mainnet app with one capped series was added on 2026-11-14:
+  https://app.yieldforge.mdloglabs.org (see [Deployed contracts (NEAR mainnet)](#deployed-contracts-near-mainnet)).
 - **Timeline:** the project was created for the hackathon and its repository history starts within the hackathon window. There is
   no pre-existing product on another chain (Q-001, Q-002).
 - **Third-party code (Q-005):** the libraries listed under [Tech stack](#tech-stack). Meta Pool stNEAR is an external protocol this
