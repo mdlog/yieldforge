@@ -12,11 +12,6 @@ import { withSeries } from '@/contexts/SeriesContext'
 import type { SeriesDisplay } from '@/hooks/useSeriesDisplay'
 import { formatYocto } from '@/utils/format'
 import { formatBps } from '@/utils/math'
-// Official icons of the wallet modules the app enables (see WalletContext), taken from each
-// @near-wallet-selector package's assets/ and downscaled to 96px WebP: they render at 22px.
-import myNearWalletIcon from '@/assets/wallets/my-near-wallet-icon.webp'
-import meteorWalletIcon from '@/assets/wallets/meteor-wallet-icon.webp'
-import hotWalletIcon from '@/assets/wallets/hot-wallet-icon.webp'
 import '@/styles/docs.css'
 
 interface FtMetadata {
@@ -66,17 +61,10 @@ function safeIcon(icon: string | null | undefined): string | null {
   return typeof icon === 'string' && icon.startsWith('data:image/') ? icon : null
 }
 
-// In the order WalletContext tries them: Meteor first, the others only if Meteor cannot load.
-const WALLETS = [
-  { name: 'Meteor Wallet', icon: meteorWalletIcon },
-  { name: 'MyNearWallet', icon: myNearWalletIcon },
-  { name: 'HOT Wallet', icon: hotWalletIcon },
-]
-
 const REPO_URL = 'https://github.com/mdlog/yieldforge'
 const CONTRACT_SOURCE_URL = `${REPO_URL}/blob/main/contracts/series/src/lib.rs`
 /** Date this page was last checked against the app and the deployed contracts. */
-const DOCS_UPDATED = '12 Nov 2026'
+const DOCS_UPDATED = '14 Nov 2026'
 /** Public signer of the hosted keeper, listed so anyone can audit its calls. */
 const KEEPER_ACCOUNT = (import.meta.env.VITE_KEEPER_ACCOUNT as string | undefined)?.trim() || null
 
@@ -284,17 +272,12 @@ export default function DocsPage() {
           <Section id="before-you-start" eyebrow="Introduction" title="Before you start">
             <ol className="docs-steps">
               <li>
-                <strong>A NEAR wallet.</strong> <em className="docs-app-rule">App behavior</em> <strong>Connect wallet</strong> signs you in with Meteor Wallet
-                (browser extension or web wallet). MyNearWallet and HOT Wallet are built in as fallbacks, used in that order only if Meteor cannot load. Every
-                transaction is signed in your wallet; YieldForge never holds keys.
-                <ul className="docs-wallets">
-                  {WALLETS.map((w) => (
-                    <li key={w.name}>
-                      <img src={w.icon} alt="" width={22} height={22} loading="lazy" />
-                      {w.name}
-                    </li>
-                  ))}
-                </ul>
+                <strong>A NEAR wallet.</strong> <em className="docs-app-rule">App behavior</em> <strong>Connect wallet</strong> opens NEAR Connect, the wallet
+                connector NEAR recommends, and lists every wallet that supports {cfg.network === 'mainnet' ? 'mainnet' : 'testnet'}:{' '}
+                {cfg.network === 'mainnet'
+                  ? 'HOT, Meteor, Intear, MyNearWallet, OKX, Nightly, NEAR Mobile, Ledger and more.'
+                  : 'Meteor, Intear, Nightly and Ledger among them (MyNearWallet and HOT only appear on mainnet).'}{' '}
+                Each wallet runs sandboxed, and every transaction is signed in your wallet; YieldForge never holds keys.
               </li>
               <li>
                 <strong>Some NEAR for gas and storage.</strong> Each call the app sends attaches 30–55 Tgas; the one-signature stake-and-deposit attaches 105 Tgas

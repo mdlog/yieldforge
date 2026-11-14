@@ -16,9 +16,11 @@ import {
   Layers,
   LockKeyhole,
   Pause,
+  Plug,
   Plus,
   Scale,
   Search,
+  Shuffle,
   Split,
   TrendingUp,
   TriangleAlert,
@@ -607,7 +609,7 @@ export default function LandingPage() {
               registers your account with each series.
             </Faq>
             <Faq q="What do I need to start?">
-              A NEAR wallet (MyNearWallet, Meteor or HOT) and some NEAR to stake. The app walks you through staking, depositing and registering for stNEAR payouts.
+              A NEAR wallet (HOT, Meteor, Intear, MyNearWallet or any other that NEAR Connect lists) and some NEAR to stake. The app walks you through staking, depositing and registering for stNEAR payouts.
             </Faq>
           </div>
         </div>
@@ -640,6 +642,8 @@ const ECOSYSTEM: Array<{ label: string; icon?: Icon; img?: string; near?: boolea
   { label: 'Meta Pool stNEAR', icon: Coins },
   { label: 'NEP-141 · NEP-145 · NEP-297', icon: Layers },
   { label: 'Rust · near-sdk 5', icon: Braces },
+  { label: 'NEAR Connect', icon: Plug },
+  { label: 'NEAR Intents', icon: Shuffle },
   { label: 'MyNearWallet', img: myNearWalletIcon },
   { label: 'Meteor Wallet', img: meteorWalletIcon },
   { label: 'HOT Wallet', img: hotWalletIcon },

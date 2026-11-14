@@ -10,7 +10,7 @@ export function tgas(n: number): string {
 
 export const ONE_YOCTO = '1'
 
-/** Wallet-selector "internal" action format; WalletContext converts it for the wallet. */
+/** The {type, params} action format (wallet-selector style), which NEAR Connect hands to the wallet as is. */
 export interface FunctionCallAction {
   type: 'FunctionCall'
   params: { methodName: string; args: Record<string, unknown>; gas: string; deposit: string }
@@ -56,7 +56,7 @@ export function buildStorageDepositTx(contractId: string, accountId: string, dep
 export function extractTxHash(outcome: unknown): string | null {
   if (!outcome || typeof outcome !== 'object') return null
   const o = outcome as Record<string, unknown>
-  // wallet-selector FinalExecutionOutcome has transaction.hash
+  // A wallet's FinalExecutionOutcome has transaction.hash
   const tx = o.transaction as Record<string, unknown> | undefined
   if (tx?.hash && typeof tx.hash === 'string') return tx.hash
   if (typeof o.hash === 'string') return o.hash
