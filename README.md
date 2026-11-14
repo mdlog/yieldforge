@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="NEAR Protocol" src="https://img.shields.io/badge/NEAR_Protocol-testnet-000000?logo=near&logoColor=white" />
+  <img alt="NEAR Protocol" src="https://img.shields.io/badge/NEAR_Protocol-testnet_%7C_mainnet-000000?logo=near&logoColor=white" />
   <img alt="Rust" src="https://img.shields.io/badge/Rust-near--sdk_5.27-B7410E?logo=rust&logoColor=white" />
   <img alt="WebAssembly" src="https://img.shields.io/badge/WebAssembly-contract-654FF0?logo=webassembly&logoColor=white" />
   <img alt="Meta Pool stNEAR" src="https://img.shields.io/badge/Meta_Pool-stNEAR-6B4FBB" />
@@ -28,7 +28,8 @@
 </p>
 
 <p align="center">
-  <a href="https://yieldforge.mdloglabs.org"><strong>Live demo</strong></a> ·
+  <a href="https://yieldforge.mdloglabs.org"><strong>Live demo (testnet)</strong></a> ·
+  <a href="https://app.yieldforge.mdloglabs.org"><strong>Mainnet app</strong></a> ·
   <a href="https://youtu.be/7dZhm4mILFo"><strong>Demo video</strong></a> ·
   <a href="https://yieldforge.mdloglabs.org/docs">In-app docs</a> ·
   <a href="#try-it-judge-walkthrough">Try it</a> ·
@@ -47,6 +48,7 @@
 - [How NEAR is used](#how-near-is-used)
 - [From any chain (NEAR Intents)](#from-any-chain-near-intents)
 - [Deployed contracts (NEAR testnet)](#deployed-contracts-near-testnet)
+- [Deployed contracts (NEAR mainnet)](#deployed-contracts-near-mainnet)
 - [Architecture](#architecture)
 - [Tech stack](#tech-stack)
 - [Getting started](#getting-started)
@@ -91,14 +93,20 @@ flowchart LR
 4. **Settle.** After the cutoff anyone calls `capture_baseline` (records R0); after maturity anyone calls `request_settlement`
    (records RT). Holders then burn PT/YT for stNEAR. There is no deadline and no queue.
 
-Series run as a ladder of tenors (7, 30 and 90 days). A new series opens its deposit window before the previous one of the same
-tenor closes, so there is always somewhere to deposit. For judging there is also a one-day series, `stnear-1d-01`, that settles
-on 2026-11-17, so the whole lifecycle can be checked during the judging window.
+Series run as a ladder of tenors (7, 30 and 90 days); `scripts/roll-series.mjs` deploys the next series of a tenor with its
+deposit window opening before the previous one closes. On the testnet demo, deposits are open on `stnear-1d-01` until
+2026-11-16 06:00 UTC and on `stnear-7d-02` until 2026-11-20 00:00 UTC; the other testnet series are past their cutoff and
+running to maturity. The one-day series `stnear-1d-01` settles on 2026-11-17, so the whole lifecycle can be checked during
+the judging window.
 
 ## Try it (judge walkthrough)
 
 **Live demo:** https://yieldforge.mdloglabs.org (NEAR testnet, live contracts). Every number on screen is read from
-the chain on page load.
+the chain on page load. This is the demo to judge with: testnet NEAR is free.
+
+**Mainnet app:** https://app.yieldforge.mdloglabs.org, the same app built for NEAR mainnet (`npm run build:mainnet`) with real
+NEAR and one capped series (see [Deployed contracts (NEAR mainnet)](#deployed-contracts-near-mainnet)). It is where the
+**From any chain** flows send real swaps.
 
 **Demo video (2 min):** https://youtu.be/7dZhm4mILFo. It shows one stake-and-deposit, a listing and a second account's
 purchase as real testnet transactions; the explorer links are in the video description.
@@ -137,7 +145,8 @@ wallet** signs in with Meteor, and MyNearWallet and HOT are only fallbacks) with
 | **Cash out**: enter 2 stNEAR, receive Solana · USDC | What arrives on Solana for your stNEAR |
 
 On the testnet demo these are **dry quotes against mainnet liquidity**: nothing is reserved or sent, and the send buttons read
-"mainnet only", because NEAR Intents settles on mainnet only (Q-007). The mainnet build (`npm run build:mainnet`) turns them on.
+"mainnet only", because NEAR Intents settles on mainnet only (Q-007). On the [mainnet app](https://app.yieldforge.mdloglabs.org)
+the same page gets a real deposit address and sends real funds.
 
 ### C. Verify on-chain
 
@@ -226,9 +235,10 @@ polled from `/v0/status`, kept in the browser across reloads, with links to the 
   it for the `receiver_id` instead (`deposit_refunded` event) and the user withdraws it with `claim_refund` (Portfolio and the
   deposit tracker show a Claim button, registering the account on stNEAR first if needed). Routed dust under 0.01 stNEAR is
   refused outright so nobody can fill the series' storage with refund records.
-- **Before Express goes public on mainnet** it needs one live test of a few dollars: NEAR Intents forwards `ft_transfer_call`
+- **Express has not had its live mainnet test yet** (one swap of a few dollars): NEAR Intents forwards `ft_transfer_call`
   with 50 Tgas by default and Meta Pool passes about 8 Tgas of that to `ft_on_transfer`, which uses about 2.4 Tgas on testnet.
-  The margin looks sufficient, but it has to be seen on mainnet. 1Click marks `customRecipientMsg` experimental.
+  The margin looks sufficient, but it has to be seen on mainnet, and 1Click marks `customRecipientMsg` experimental. Until that
+  test is done, use **Standard** delivery (Details → Delivery) for anything more than a few dollars.
 - Cash-outs use a plain `ft_transfer`, never `ft_transfer_call`, because the deposit address is an implicit account with no contract.
 - Mainnet series carry a **deposit cap** (`--cap`, required by `deploy-series.mjs` on mainnet) to limit exposure of unaudited code,
   and a **minimum deposit** of 1 stNEAR by default (`--min-deposit`), because the series pays each new depositor's storage.
@@ -240,9 +250,10 @@ exposure until they cash out; the page says so before anything is sent. Swaps co
 origin-chain gas, each way: on a 7- or 30-day term a small position can lose more on the round trip than the term pays. The
 cross-chain path makes sense for larger amounts, for several terms in a row, or for someone who wants NEAR exposure anyway.
 
-**Status.** The flows, the v3 contract (receiver message + cap) and the mainnet build are in this repository and tested
-(contract unit tests, `tests/intents-flows.test.mjs`, live dry quotes). The mainnet series are **not deployed yet**. Until they
-are, the testnet demo shows live dry quotes only.
+**Status (2026-11-15).** The flows, the v3 contract (receiver message + cap) and the mainnet build are tested (64 contract unit
+tests, 90 frontend tests including `tests/intents-flows.test.mjs`, live dry quotes). The mainnet app is live at
+https://app.yieldforge.mdloglabs.org with one series, `stnear-7d-01.sparecheese3473.near` (see
+[Deployed contracts (NEAR mainnet)](#deployed-contracts-near-mainnet)). The testnet demo keeps showing live dry quotes.
 
 ## Deployed contracts (NEAR testnet)
 
@@ -258,6 +269,20 @@ the market fee is 0.25 %, paid by the buyer.
 | [`stnear-90d-02.solidnecktie5405.testnet`](https://testnet.nearblocks.io/address/stnear-90d-02.solidnecktie5405.testnet) | 2026-11-11 00:00 | 2027-02-09 00:00 | 0.25 % |
 
 Underlying: Meta Pool stNEAR, [`meta-v2.pool.testnet`](https://testnet.nearblocks.io/address/meta-v2.pool.testnet).
+
+## Deployed contracts (NEAR mainnet)
+
+App: https://app.yieldforge.mdloglabs.org. Deployed on 2026-11-15 with the v3 wasm (code hash
+`F7zyR7EdNMJHMRbm6Bqp2Z5uvotj5H8yVWojuyRmTcsD`, built by `scripts/build-contract.sh`). The contract is unaudited, so the series is
+capped: at most 50 stNEAR in total, at least 1 stNEAR per deposit. The deposit fee is 0.5 % a year pro-rated to the tenor; the
+market fee is 0.25 %, paid by the buyer.
+
+| Series account | Deposits close (UTC) | Maturity (UTC) | Deposit fee | Cap |
+| --- | --- | --- | --- | --- |
+| [`stnear-7d-01.sparecheese3473.near`](https://nearblocks.io/address/stnear-7d-01.sparecheese3473.near) | 2026-11-17 00:00 | 2026-11-24 00:00 | 0.01 % | 50 stNEAR |
+
+Underlying: Meta Pool stNEAR, [`meta-pool.near`](https://nearblocks.io/address/meta-pool.near). Check it with
+`npx near-cli view stnear-7d-01.sparecheese3473.near get_series '{}' --networkId mainnet`.
 
 ## Architecture
 
@@ -275,7 +300,7 @@ Underlying: Meta Pool stNEAR, [`meta-v2.pool.testnet`](https://testnet.nearblock
 │   └── .env.mainnet            # Public mainnet config (build:mainnet); keys go in the git-ignored .env.mainnet.local
 ├── contracts/
 │   └── series/src/lib.rs       # Series contract: vault + YT (NEP-141) + PT ledger + YT market
-├── scripts/                    # deploy-series, roll-series, create-keeper, keeper, e2e-testnet (testnet operations)
+├── scripts/                    # deploy-series, roll-series, create-keeper, keeper (testnet, or mainnet with NEAR_NETWORK=mainnet), e2e-testnet
 ├── ARCHITECTURE.md             # Technical design
 └── PRD.md                      # Product requirements
 ```
@@ -288,11 +313,11 @@ errors) and transactions signed in the user's wallet. There is no backend and no
 | Layer | Technology |
 | --- | --- |
 | Smart contract | Rust, `near-sdk` 5.27, `near-contract-standards` 5.27 (NEP-141/145/148), `uint` (U256 math), binaryen `wasm-opt` |
-| Chain | NEAR Protocol testnet (mainnet build ready), Meta Pool stNEAR, NEAR Intents 1Click API, NearBlocks API v3 (account activity), FastNEAR archival RPC (stNEAR APR, read-only mainnet reads) |
+| Chain | NEAR Protocol testnet (demo) and mainnet (app.yieldforge.mdloglabs.org), Meta Pool stNEAR, NEAR Intents 1Click API, NearBlocks API v3 (account activity), FastNEAR archival RPC (stNEAR APR, read-only mainnet reads) |
 | Frontend | React 19, TypeScript 5.7, Vite 6, React Router 7, lucide-react |
 | NEAR client | near-api-js 5, NEAR Wallet Selector 10 (MyNearWallet, Meteor, HOT) |
 | Scripts | Node.js, near-api-js |
-| Hosting | Railway (Node 20, Railpack) |
+| Hosting | Railway (Node 20, Railpack): testnet app, mainnet app (`npm run build:mainnet`) and the keeper cron |
 
 ## Getting started
 
@@ -316,7 +341,7 @@ npm start            # serve dist/ on $PORT (default 3000), as on Railway
 
 ```sh
 cd contracts
-cargo test -p yieldforge-series        # 40 unit tests
+cargo test -p yieldforge-series        # 64 unit tests
 bash ../scripts/build-contract.sh      # tests + wasm build + wasm-opt → target/yieldforge_series_v3.wasm
 ```
 
@@ -333,9 +358,17 @@ testnet keeps 1 % a year). On a 30-day series that is 4 bps.
 
 ```sh
 bash scripts/build-contract.sh   # contracts/target/yieldforge_series_v3.wasm
-NEAR_NETWORK=mainnet node scripts/roll-series.mjs --tenor 30 --cap 50 --dry-run   # drop --dry-run to deploy
+NEAR_NETWORK=mainnet node scripts/roll-series.mjs --tenor 7 --cap 50 --dry-run   # drop --dry-run to deploy
+NEAR_NETWORK=mainnet node scripts/keeper.mjs --dry-run                         # capture_baseline / request_settlement where due
+NEAR_NETWORK=mainnet node scripts/create-keeper.mjs                            # one-time: key saved to .env.mainnet.local
 npm --prefix yieldforge run build:mainnet
 ```
+
+`stnear-7d-01.sparecheese3473.near` was deployed this way. The mainnet app is a separate Railway service on the same repo
+(root `yieldforge`, build command `npm run build:mainnet`, start `npm start`), served at https://app.yieldforge.mdloglabs.org;
+it needs no variables because `yieldforge/.env.mainnet` is committed. The hosted keeper cron still runs against testnet only, so
+the mainnet series' lifecycle calls are made with `NEAR_NETWORK=mainnet node scripts/keeper.mjs` for now (they are
+permissionless, and the Portfolio page offers the same buttons).
 
 ### Deploy and operate series (testnet)
 
@@ -371,16 +404,17 @@ clone runs against the deployed contracts with no setup. Leave `VITE_NEAR_LIVE` 
 Mainnet values live in [`yieldforge/.env.mainnet`](yieldforge/.env.mainnet), loaded by `npm run dev:mainnet` and
 `npm run build:mainnet`. The **From any chain** page sends real swaps only in a live mainnet build; anywhere else it shows dry quotes.
 
-Deploy keys (`NEAR_ACCOUNT`, `NEAR_PRIVATE_KEY`) are only for the scripts. Keep them in `yieldforge/.env`; never prefix them with
-`VITE_` and never commit them.
+Deploy keys (`NEAR_ACCOUNT`, `NEAR_PRIVATE_KEY`) are only for the scripts. Keep testnet keys in `yieldforge/.env` and mainnet keys
+in `yieldforge/.env.mainnet.local` (both git-ignored), never in `.env.mainnet`, which is committed; never prefix them with `VITE_`.
 
 ## Security model and limitations
 
 - **Fully collateralized.** PT and YT payouts per unit add up to one stNEAR and round down; the app shows the live collateral ratio.
 - **Permissionless lifecycle, fixed terms.** Anyone can capture the baseline and settle; cutoff, maturity and fee have no setter.
 - **Narrow admin.** Pause stops new deposits, listings and fills only. There is no admin path to user stNEAR.
-- **Not audited.** This is testnet software. The series accounts still hold a full-access deployer key, so the code can be
-  upgraded; before mainnet the keys should be removed or moved to a multisig/DAO.
+- **Not audited.** The series accounts on testnet and on mainnet still hold a full-access deployer key, so the code can be
+  upgraded. That is why mainnet series are capped (50 stNEAR for `stnear-7d-01`); the keys should be removed or moved to a
+  multisig/DAO before caps are raised.
 - **Storage is paid by the series.** Registration happens on first deposit; `storage_unregister` is disabled so PT, YT and
   refund records can never be dropped (and their storage refunded) while they still have value. `pt_transfer` charges the
   sender for a new receiver's PT record. Listings must expire by maturity and nothing can be bought after it.
@@ -398,9 +432,9 @@ Deploy keys (`NEAR_ACCOUNT`, `NEAR_PRIVATE_KEY`) are only for the scripts. Keep 
 
 - **Event:** [NEAR HACKATHON](https://nearhackathon.com), November 2026.
 - **Track:** Unstoppable DeFi (`defi`).
-- **Network:** the protocol runs on NEAR testnet, which the rules allow for every track (Q-010). The NEAR Intents flows need
-  mainnet (Q-007); their mainnet deployment is pending (see [From any chain](#from-any-chain-near-intents)), and on testnet they
-  show live dry quotes.
+- **Network:** the judged demo runs on NEAR testnet, which the rules allow for every track (Q-010). The NEAR Intents flows need
+  mainnet (Q-007); on testnet they show live dry quotes. A mainnet app with one capped series was added on 2026-11-15, after
+  the submission deadline: https://app.yieldforge.mdloglabs.org (see [Deployed contracts (NEAR mainnet)](#deployed-contracts-near-mainnet)).
 - **Timeline:** the project was created for the hackathon and its repository history starts within the hackathon window. There is
   no pre-existing product on another chain (Q-001, Q-002).
 - **Third-party code (Q-005):** the libraries listed under [Tech stack](#tech-stack). Meta Pool stNEAR is an external protocol this
@@ -409,7 +443,8 @@ Deploy keys (`NEAR_ACCOUNT`, `NEAR_PRIVATE_KEY`) are only for the scripts. Keep 
 - **Other submission by the same person (Q-015):** [Veiled Markets](https://github.com/hevDev7/veiled-markets-near) (live at
   https://veiledmarkets.xyz), a prediction market on NEAR where positions are private. The two projects are independent: they
   share no code, contracts or accounts.
-- **Live demo:** https://yieldforge.mdloglabs.org, kept online through judging.
+- **Live demo:** https://yieldforge.mdloglabs.org (testnet), kept online through judging.
+- **Mainnet app:** https://app.yieldforge.mdloglabs.org
 - **Demo video:** https://youtu.be/7dZhm4mILFo
 
 ## License
