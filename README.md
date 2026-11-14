@@ -317,7 +317,7 @@ errors) and transactions signed in the user's wallet. There is no backend and no
 | Frontend | React 19, TypeScript 5.7, Vite 6, React Router 7, lucide-react |
 | NEAR client | near-api-js 5, NEAR Wallet Selector 10 (MyNearWallet, Meteor, HOT) |
 | Scripts | Node.js, near-api-js |
-| Hosting | Railway (Node 20, Railpack): testnet app, mainnet app (`npm run build:mainnet`) and the keeper cron |
+| Hosting | Railway (Node 20, Railpack): testnet app, mainnet app (`npm run build:mainnet`) and a keeper cron for each network |
 
 ## Getting started
 
@@ -366,9 +366,10 @@ npm --prefix yieldforge run build:mainnet
 
 `stnear-7d-01.sparecheese3473.near` was deployed this way. The mainnet app is a separate Railway service on the same repo
 (root `yieldforge`, build command `npm run build:mainnet`, start `npm start`), served at https://app.yieldforge.mdloglabs.org;
-it needs no variables because `yieldforge/.env.mainnet` is committed. The hosted keeper cron still runs against testnet only, so
-the mainnet series' lifecycle calls are made with `NEAR_NETWORK=mainnet node scripts/keeper.mjs` for now (they are
-permissionless, and the Portfolio page offers the same buttons).
+it needs no variables because `yieldforge/.env.mainnet` is committed. Another Railway service, `keeper-mainnet`, is the mainnet
+keeper: the same cron (`npm run keeper`, every 10 minutes) with `VITE_NEAR_NETWORK=mainnet` and `KEEPER_ACCOUNT` /
+`KEEPER_PRIVATE_KEY` set to `keeper.sparecheese3473.near`, a low-balance account (0.25 NEAR) made by `create-keeper.mjs`. The
+calls stay permissionless, so `NEAR_NETWORK=mainnet node scripts/keeper.mjs` and the Portfolio page's buttons work as a fallback.
 
 ### Deploy and operate series (testnet)
 
