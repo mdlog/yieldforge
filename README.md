@@ -483,6 +483,8 @@ in `yieldforge/.env.mainnet.local` (both git-ignored), never in `.env.mainnet`, 
 - **Live app (mainnet):** https://app.yieldforge.mdloglabs.org
 - **Testnet demo:** https://yieldforge.mdloglabs.org, kept online through judging.
 - **Demo video:** https://youtu.be/7dZhm4mILFo
+- **Demo post on X (mainnet):** https://x.com/MDLOG_labs/status/2121743768022065583. The first post,
+  https://x.com/MDLOG_labs/status/2121019522371199215, is from the testnet stage.
 
 ## License
 
