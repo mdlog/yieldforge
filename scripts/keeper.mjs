@@ -1,5 +1,6 @@
 // Local entry for the keeper (yieldforge/keeper.mjs, which the Railway cron service runs as `npm run keeper`).
-// It signs with KEEPER_ACCOUNT / KEEPER_PRIVATE_KEY from yieldforge/.env when set, else with the deployer key
+// It signs with KEEPER_ACCOUNT / KEEPER_PRIVATE_KEY from the network's secrets file (yieldforge/.env, or
+// yieldforge/.env.mainnet.local with NEAR_NETWORK=mainnet) when set, else with the deployer key
 // (NEAR_ACCOUNT / NEAR_PRIVATE_KEY). R0 is fairest when captured right after a cutoff. The key is never printed.
 //
 //   node scripts/keeper.mjs            act on every series that is due

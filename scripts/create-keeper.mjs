@@ -1,12 +1,13 @@
 // Create a dedicated keeper account (keeper.<NEAR_ACCOUNT>) with its own key and a small balance, so the
 // hosted keeper (Railway cron, yieldforge/keeper.mjs) never needs the deploy key. capture_baseline and
 // request_settlement are permissionless, so this account needs no role on the series contracts.
-// Its key is saved to yieldforge/.env as KEEPER_ACCOUNT / KEEPER_PRIVATE_KEY and never printed.
+// Its key is saved to the network's git-ignored secrets file (yieldforge/.env on testnet, yieldforge/.env.mainnet.local
+// on mainnet) as KEEPER_ACCOUNT / KEEPER_PRIVATE_KEY and never printed.
 //
-//   node scripts/create-keeper.mjs [--name keeper] [--balance 0.25]
+//   [NEAR_NETWORK=mainnet] node scripts/create-keeper.mjs [--name keeper] [--balance 0.25]
 import fs from 'fs'
 import path from 'path'
-import { ROOT, accountExists, connectAs, explorer, fmt, loadEnv, nearApi, nearBalance, parse } from './near-lib.mjs'
+import { NETWORK, ROOT, SECRET_ENV_FILE, accountExists, connectAs, explorer, fmt, loadEnv, nearApi, nearBalance, parse } from './near-lib.mjs'
 
 const { KeyPair, transactions } = nearApi
 
@@ -18,13 +19,13 @@ function arg(name, fallback) {
 const env = loadEnv()
 const accountId = `${arg('name', 'keeper')}.${env.NEAR_ACCOUNT}`
 const balance = parse(arg('balance', '0.25'))
-const envFile = path.join(ROOT, 'yieldforge', '.env')
+const envFile = path.join(ROOT, 'yieldforge', SECRET_ENV_FILE)
 const original = fs.readFileSync(envFile, 'utf8')
 
-if (/^KEEPER_PRIVATE_KEY=./m.test(original)) throw new Error('yieldforge/.env already has KEEPER_PRIVATE_KEY')
+if (/^KEEPER_PRIVATE_KEY=./m.test(original)) throw new Error(`yieldforge/${SECRET_ENV_FILE} already has KEEPER_PRIVATE_KEY`)
 if (await accountExists(accountId)) throw new Error(`${accountId} already exists`)
 const available = await nearBalance(env.NEAR_ACCOUNT)
-console.log(`deployer ${env.NEAR_ACCOUNT}: ${fmt(available, 3)} NEAR · new keeper ${accountId} with ${fmt(balance, 3)} NEAR`)
+console.log(`${NETWORK} · deployer ${env.NEAR_ACCOUNT}: ${fmt(available, 3)} NEAR · new keeper ${accountId} with ${fmt(balance, 3)} NEAR`)
 if (available < balance + parse('0.05')) throw new Error('Not enough NEAR on the deployer for this balance plus fees')
 
 // Save the key before funding the account, so a funded account is never left without its key on disk.
@@ -42,7 +43,7 @@ try {
   const failure = outcome.status?.Failure ?? outcome.receipts_outcome.find((r) => r.outcome.status.Failure)?.outcome.status.Failure
   if (failure) throw new Error(`create failed: ${JSON.stringify(failure)} (${explorer(outcome.transaction.hash)})`)
   console.log(`created ${accountId} · public key ${keyPair.getPublicKey().toString()} · ${explorer(outcome.transaction.hash)}`)
-  console.log('KEEPER_ACCOUNT and KEEPER_PRIVATE_KEY saved to yieldforge/.env')
+  console.log(`KEEPER_ACCOUNT and KEEPER_PRIVATE_KEY saved to yieldforge/${SECRET_ENV_FILE}`)
 } catch (e) {
   fs.writeFileSync(envFile, original)
   throw e
