@@ -894,8 +894,7 @@ a { color: inherit; }
   .buy-facts { grid-template-columns: 1fr 1fr; gap: 12px 0; }
 }
 
-/* From any chain (NEAR Intents) */
-.ac-page { max-width: 600px; }
+/* From any chain (NEAR Intents): the same 860px column as Deposit & sell (.earn-page). */
 .ac-head { display: grid; gap: 10px; margin-bottom: 22px; }
 .ac-title { margin: 0; font-size: clamp(30px, 3.6vw, 42px); line-height: 1; letter-spacing: -.06em; font-weight: 700; }
 .ac-preview { display: flex; align-items: baseline; gap: 8px; margin: 2px 0 0; color: var(--ink-muted); font-size: 12px; line-height: 1.45; }
@@ -931,7 +930,7 @@ a { color: inherit; }
 .ac-get-item { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
 .ac-swap-arrow { position: relative; z-index: 1; justify-self: center; display: grid; place-items: center; width: 28px; height: 28px; margin: -8px 0; border: 1px solid var(--line); background: var(--white); color: var(--ink-soft); }
 .ac-picker { flex: 0 0 auto; display: flex; min-width: 0; border: 1px solid var(--line); background: var(--white); }
-.ac-picker select { flex: 0 1 auto; min-width: 0; max-width: 160px; padding: 8px 6px; border: 0; background: transparent; color: var(--ink); font: 13px var(--mono); cursor: pointer; }
+.ac-picker select { flex: 0 1 auto; min-width: 0; max-width: 220px; padding: 8px 6px; border: 0; background: transparent; color: var(--ink); font: 13px var(--mono); cursor: pointer; }
 .ac-picker select:only-child { max-width: 260px; }
 .ac-picker select + select { border-left: 1px solid var(--line); }
 .ac-picker select:disabled { cursor: default; color: var(--ink-muted); }

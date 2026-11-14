@@ -174,7 +174,7 @@ export default function AnyChainPage() {
   const current = focus === NEW ? undefined : (mine.find((s) => s.depositAddress === focus && s.flow === tab) ?? mine.find((s) => s.flow === tab && needsAttention(s)))
 
   return (
-    <div className="page-wrap earn-page ac-page">
+    <div className="earn-page ac-page">
       <header className="ac-head">
         <h1 className="ac-title">From any chain</h1>
         <p className="earn-lead">Use USDC, ETH, BTC, SOL and 200+ other assets from 25+ chains, and cash out to any of them. NEAR Intents handles the routing.</p>
