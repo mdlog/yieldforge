@@ -399,6 +399,27 @@ export interface SwapRecordBase {
   status: string
 }
 
+type FollowableSwap = SwapRecordBase & { flow: string; mode?: string; deadline?: string; finishedTx?: string }
+
+/** A swap the open tab should keep showing: still moving, or delivered but waiting for the user's NEAR step. */
+export function needsAttention(s: FollowableSwap, now = Date.now()): boolean {
+  const st = trackerState(s.status)
+  if (st.terminal) return s.status === 'SUCCESS' && !s.finishedTx && (s.flow === 'buy-yt' || (s.flow === 'deposit' && s.mode === 'standard'))
+  // A quote nobody funded: 1Click keeps it at PENDING_DEPOSIT after the deadline.
+  const stale = (s.status === 'PENDING_DEPOSIT' || !s.status) && s.deadline != null && Date.parse(s.deadline) + 3_600_000 < now
+  return !stale
+}
+
+/**
+ * The swap an any-chain tab follows: the one picked from the history, else (only while a wallet is connected) the
+ * newest unfinished one of that flow. Without a wallet the history lists the browser's swaps, and none opens by itself.
+ */
+export function followedSwap<T extends FollowableSwap>(mine: T[], p: { focus: string | null; tab: string; connected: boolean; now: number }): T | undefined {
+  const picked = mine.find((s) => s.depositAddress === p.focus && s.flow === p.tab)
+  if (picked || !p.connected) return picked
+  return mine.find((s) => s.flow === p.tab && needsAttention(s, p.now))
+}
+
 /** Insert or update by deposit address; newest first. */
 export function upsertSwap<T extends SwapRecordBase>(list: T[], rec: T): T[] {
   const prev = list.find((s) => s.depositAddress === rec.depositAddress)

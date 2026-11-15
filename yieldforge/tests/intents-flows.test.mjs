@@ -11,6 +11,7 @@ import {
   buildDepositQuoteRequest,
   buildUnwrapAndBuyPlan,
   expressCheck,
+  followedSwap,
   fromAtomic,
   looksLikeAddress,
   nearPerStNear,
@@ -301,5 +302,29 @@ describe('why a start button is off', () => {
   it('waits for the quote, and stays quiet when the quote failed because that error is already shown', () => {
     assert.equal(startBlocker({ ...base, quoteReady: false, quoteLoading: true }), 'Getting a quote…');
     assert.equal(startBlocker({ ...base, quoteReady: false, quoteLoading: false }), null);
+  });
+});
+
+describe('which swap the any-chain tab follows', () => {
+  const later = new Date(NOW + 86_400_000).toISOString();
+  const pending = { depositAddress: 'dep-a', flow: 'deposit', status: 'PENDING_DEPOSIT', deadline: later, createdAt: NOW };
+  const done = { depositAddress: 'dep-b', flow: 'deposit', status: 'SUCCESS', mode: 'express', deadline: later, createdAt: NOW - 1 };
+
+  it('opens the newest unfinished swap of the tab while a wallet is connected', () => {
+    assert.equal(followedSwap([pending, done], { focus: null, tab: 'deposit', connected: true, now: NOW })?.depositAddress, 'dep-a');
+  });
+
+  it('opens nothing on its own when no wallet is connected', () => {
+    assert.equal(followedSwap([pending, done], { focus: null, tab: 'deposit', connected: false, now: NOW }), undefined);
+  });
+
+  it('still opens a swap picked from the history, wallet or not', () => {
+    assert.equal(followedSwap([pending, done], { focus: 'dep-b', tab: 'deposit', connected: false, now: NOW })?.depositAddress, 'dep-b');
+    assert.equal(followedSwap([pending, done], { focus: 'dep-a', tab: 'buy-yt', connected: false, now: NOW }), undefined);
+  });
+
+  it('lets a quote nobody funded go an hour after its deadline', () => {
+    const stale = { ...pending, deadline: new Date(NOW - 3_700_000).toISOString() };
+    assert.equal(followedSwap([stale], { focus: null, tab: 'deposit', connected: true, now: NOW }), undefined);
   });
 });

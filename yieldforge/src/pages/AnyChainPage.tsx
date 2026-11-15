@@ -28,7 +28,9 @@ import {
   buildUnwrapTx,
   expressCheck,
   fromAtomic,
+  followedSwap,
   looksLikeAddress,
+  needsAttention,
   startBlocker,
   nearPerStNear,
   roundTripEstimate,
@@ -136,15 +138,6 @@ function useSwaps(): SwapRecord[] {
 
 const NEW = '__new__'
 
-/** A swap the open tab should keep showing: still moving, or delivered but waiting for the user's NEAR step. */
-function needsAttention(s: SwapRecord, now = Date.now()): boolean {
-  const st = trackerState(s.status)
-  if (st.terminal) return s.status === 'SUCCESS' && !s.finishedTx && (s.flow === 'buy-yt' || (s.flow === 'deposit' && s.mode === 'standard'))
-  // A quote nobody funded: 1Click keeps it at PENDING_DEPOSIT after the deadline.
-  const stale = (s.status === 'PENDING_DEPOSIT' || !s.status) && s.deadline != null && Date.parse(s.deadline) + 3_600_000 < now
-  return !stale
-}
-
 function usd(v: string | number | undefined): string {
   const n = Number(v)
   return Number.isFinite(n) && n > 0 ? `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''
@@ -170,9 +163,9 @@ export default function AnyChainPage() {
     setParams(next, { replace: true })
     setFocus(null)
   }
+  // With a wallet: its swaps. Without one: every swap in this browser, listed below but none opened by itself.
   const mine = swaps.filter((s) => s.network === cfg.network && (!accountId || s.accountId === accountId))
-  // The swap the open tab is following: the one picked from the history, else the newest unfinished one of this flow.
-  const current = focus === NEW ? undefined : (mine.find((s) => s.depositAddress === focus && s.flow === tab) ?? mine.find((s) => s.flow === tab && needsAttention(s)))
+  const current = focus === NEW ? undefined : followedSwap(mine, { focus, tab, connected: !!accountId, now: Date.now() })
 
   return (
     <div className="earn-page ac-page">
@@ -225,6 +218,7 @@ export default function AnyChainPage() {
                     </span>
                     <small>
                       {new Date(s.createdAt).toLocaleString()} · {s.status || 'quoted'} · {shorten(s.depositAddress, 8, 6)}
+                      {!accountId && s.accountId ? ` · for ${s.accountId}` : ''}
                     </small>
                   </span>
                   <button
