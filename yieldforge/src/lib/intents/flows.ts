@@ -113,6 +113,18 @@ export function looksLikeAddress(chain: string, address: string): boolean {
   }
 }
 
+/**
+ * Why a flow's start button is off, shown under it, or null when nothing is missing. The amount comes first, then the
+ * address (the user can type it while the quote loads), then the quote. A failed quote returns null: its error is shown
+ * above the button already.
+ */
+export function startBlocker(p: { amountOk: boolean; addressOk: boolean; quoteReady: boolean; quoteLoading: boolean; amountHint: string; addressHint: string }): string | null {
+  if (!p.amountOk) return p.amountHint
+  if (!p.addressOk) return p.addressHint
+  if (!p.quoteReady) return p.quoteLoading ? 'Getting a quote…' : null
+  return null
+}
+
 // Quote requests -------------------------------------------------------------
 
 function deadline(now: number): string {

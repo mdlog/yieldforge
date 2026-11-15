@@ -241,7 +241,7 @@ the browser (no backend, no API key; 1Click adds its 0.2 % fee, which every quot
 
 | Flow | What the user does | What happens |
 | --- | --- | --- |
-| **Deposit** | Sends e.g. 25 USDC on Arbitrum to a one-time deposit address | A solver swaps it to stNEAR. **Express:** NEAR Intents delivers it with `ft_transfer_call` to the series, with `msg` `{"receiver_id":"<user>.near"}`, and the series mints PT + YT to the user. No NEAR transaction needed. **Standard:** the stNEAR lands in the user's wallet and they sign the deposit. |
+| **Deposit** | Sends e.g. 25 USDC on Arbitrum to a one-time deposit address, shown as text and as a QR code to scan with a phone wallet | A solver swaps it to stNEAR. **Express:** NEAR Intents delivers it with `ft_transfer_call` to the series, with `msg` `{"receiver_id":"<user>.near"}`, and the series mints PT + YT to the user. No NEAR transaction needed. **Standard:** the stNEAR lands in the user's wallet and they sign the deposit. |
 | **Buy YT** | Picks a listing, sends BTC/ETH/SOL/USDC | An `EXACT_OUTPUT` quote delivers exactly the NEAR the purchase needs (price + 0.25 % fee + one-time YT registration + gas) as wNEAR; the app unwraps it (`near_withdraw`) and the user signs `buy`. |
 | **Cash out** | Sends stNEAR (redemptions) or NEAR (YT sale proceeds) to any chain | One NEAR transaction. stNEAR: `storage_deposit` for the deposit address on `meta-pool.near`, then `ft_transfer`. NEAR: on `wrap.near`, register the wallet, `near_deposit`, register the deposit address, `ft_transfer`. 1Click swaps and pays out on the destination chain; refunds come back to the NEAR wallet. |
 
@@ -348,7 +348,7 @@ errors) and transactions signed in the user's wallet. There is no backend and no
 | --- | --- |
 | Smart contract | Rust, `near-sdk` 5.27, `near-contract-standards` 5.27 (NEP-141/145/148), `uint` (U256 math), binaryen `wasm-opt` |
 | Chain | NEAR Protocol mainnet (app.yieldforge.mdloglabs.org) and testnet (demo), Meta Pool stNEAR, NEAR Intents 1Click API, NearBlocks API v3 (account activity), FastNEAR archival RPC (stNEAR APR, read-only mainnet reads) |
-| Frontend | React 19, TypeScript 5.7, Vite 6, React Router 7, lucide-react |
+| Frontend | React 19, TypeScript 5.7, Vite 6, React Router 7, lucide-react, uqr (deposit-address QR codes) |
 | NEAR client | NEAR Connect 0.12 (`@hot-labs/near-connect`: HOT, Meteor, Intear, MyNearWallet, OKX, Nightly, NEAR Mobile, Ledger, …), JSON-RPC view calls over `fetch` |
 | Scripts | Node.js, near-api-js 5 |
 | Hosting | Railway (Node 20, Railpack): testnet app, mainnet app (`npm run build:mainnet`) and a keeper cron for each network |

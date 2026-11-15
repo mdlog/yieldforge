@@ -1,7 +1,8 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { CircleAlert, CircleCheck, LoaderCircle, Undo2 } from 'lucide-react'
 import { CopyButton, ExplorerLink } from '@/components/ui'
 import { TRACKER_STEPS, trackerState } from '@/lib/intents/flows'
+import { depositQr } from '@/lib/intents/qr'
 import { chainLabel, getStatus, type StatusResponse } from '@/lib/intents/oneclick'
 import { saveSwap, type SwapRecord } from '@/lib/intents/swapStore'
 
@@ -40,6 +41,20 @@ export function useSwapStatus(rec: SwapRecord | null) {
   }, [address, rec?.network, terminal])
 
   return { details, error }
+}
+
+/** The deposit address as a QR code, for a wallet on a phone to scan instead of copying the address over. */
+function AddressQr({ address, chain }: { address: string; chain: string }) {
+  const qr = useMemo(() => depositQr(address), [address])
+  return (
+    <figure className="ac-qr">
+      <svg viewBox={`0 0 ${qr.size} ${qr.size}`} shapeRendering="crispEdges" role="img" aria-label={`QR code of the ${chain} deposit address`}>
+        <rect width={qr.size} height={qr.size} fill="#fff" />
+        <path d={qr.path} fill="#000" />
+      </svg>
+      <figcaption>Scan with your {chain} wallet</figcaption>
+    </figure>
+  )
 }
 
 /**
@@ -81,10 +96,15 @@ export function FundsTracker({ rec, finalLabel, finalDone, finalAction }: { rec:
           <span className="ac-muted">
             Send exactly <strong>{rec.amountInFormatted} {rec.originSymbol}</strong> on <strong>{chainLabel(rec.originChain)}</strong> to
           </span>
-          <code className="ac-address">{rec.depositAddress}</code>
-          <div className="ac-row">
-            <CopyButton value={rec.depositAddress} label="Copy address" />
-            <CopyButton value={rec.amountInFormatted} label="Copy amount" />
+          <div className="ac-deposit-main">
+            <div className="ac-deposit-text">
+              <code className="ac-address">{rec.depositAddress}</code>
+              <div className="ac-row">
+                <CopyButton value={rec.depositAddress} label="Copy address" />
+                <CopyButton value={rec.amountInFormatted} label="Copy amount" />
+              </div>
+            </div>
+            <AddressQr address={rec.depositAddress} chain={chainLabel(rec.originChain)} />
           </div>
           <small className="ac-muted">
             Use the {chainLabel(rec.originChain)} network only. {deadline ? `Quote valid until ${deadline.toUTCString().slice(5, 22)} UTC; ` : ''}

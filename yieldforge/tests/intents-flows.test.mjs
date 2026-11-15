@@ -16,6 +16,7 @@ import {
   nearPerStNear,
   pruneSwaps,
   roundTripEstimate,
+  startBlocker,
   stNearUsd,
   trackerState,
   toAtomic,
@@ -278,5 +279,27 @@ describe('stNEAR valued at Meta Pool rate', () => {
   it('feeds a believable entry cost to the round trip', () => {
     const e = roundTripEstimate({ usdIn: 24.990675, usdOut: stNearUsd(4922446244349848319191553n, PRICE, 3.32), depositFeeBps: 1n, aprPercent: 3.8, termDays: 1 });
     assert.ok(e.entryPct > 0.8 && e.entryPct < 1.0);
+  });
+});
+
+describe('why a start button is off', () => {
+  const base = { amountOk: true, addressOk: true, quoteReady: true, quoteLoading: false, amountHint: 'Enter an amount.', addressHint: 'Enter your Arbitrum address for refunds.' };
+
+  it('says nothing once every step is done', () => {
+    assert.equal(startBlocker(base), null);
+  });
+
+  it('names the missing refund address even while the quote loads', () => {
+    assert.equal(startBlocker({ ...base, addressOk: false }), 'Enter your Arbitrum address for refunds.');
+    assert.equal(startBlocker({ ...base, addressOk: false, quoteReady: false, quoteLoading: true }), 'Enter your Arbitrum address for refunds.');
+  });
+
+  it('asks for the amount first', () => {
+    assert.equal(startBlocker({ ...base, amountOk: false, addressOk: false }), 'Enter an amount.');
+  });
+
+  it('waits for the quote, and stays quiet when the quote failed because that error is already shown', () => {
+    assert.equal(startBlocker({ ...base, quoteReady: false, quoteLoading: true }), 'Getting a quote…');
+    assert.equal(startBlocker({ ...base, quoteReady: false, quoteLoading: false }), null);
   });
 });

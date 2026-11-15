@@ -977,6 +977,12 @@ a { color: inherit; }
 .ac-tone-refunded .ac-tracker-status strong { color: var(--blue); }
 .ac-tone-failed .ac-tracker-status strong { color: var(--rust); }
 .ac-deposit-box { display: grid; gap: 8px; padding: 14px; background: var(--white); border: 1px dashed var(--ink-muted); font-size: 13px; }
+/* The address and its copy buttons, with the address QR code beside them (below them on a narrow screen). */
+.ac-deposit-main { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 16px; }
+.ac-deposit-text { display: grid; flex: 1 1 260px; gap: 8px; min-width: 0; }
+.ac-qr { display: grid; justify-items: center; gap: 4px; margin: 0; }
+.ac-qr svg { display: block; width: 136px; height: 136px; border: 1px solid var(--line); }
+.ac-qr figcaption { color: var(--ink-muted); font-size: 11px; }
 .ac-address { display: block; overflow-wrap: anywhere; padding: 10px 12px; background: var(--ink); color: var(--acid); font: 13px var(--mono); }
 .ac-history { list-style: none; margin: 0; padding: 0; display: grid; }
 .ac-history li { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 13px; }
@@ -1004,3 +1010,5 @@ a { color: inherit; }
   .ac-step { grid-template-columns: 20px 1fr; align-items: center; border-top: 0; border-left: 3px solid var(--line); padding: 2px 0 2px 8px; }
   .ac-new { position: static; justify-self: start; margin-bottom: 8px; }
 }
+/* What still blocks an any-chain start button, next to it. */
+.ac-start-hint { color: var(--ink-soft); font-size: 12px; }

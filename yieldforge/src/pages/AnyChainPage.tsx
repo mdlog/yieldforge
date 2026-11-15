@@ -29,6 +29,7 @@ import {
   expressCheck,
   fromAtomic,
   looksLikeAddress,
+  startBlocker,
   nearPerStNear,
   roundTripEstimate,
   stNearUsd,
@@ -378,7 +379,7 @@ function AddressInput({ id, value, onChange, chain, placeholder, disabled }: { i
   )
 }
 
-function StartButton({ intentsLive, ready, busy, onClick, children }: { intentsLive: boolean; ready: boolean; busy: boolean; onClick: () => void; children: ReactNode }) {
+function StartButton({ intentsLive, ready, busy, onClick, hint, children }: { intentsLive: boolean; ready: boolean; busy: boolean; onClick: () => void; hint?: string | null; children: ReactNode }) {
   const { isConnected, connect } = useWallet()
   if (!intentsLive) {
     return (
@@ -389,9 +390,16 @@ function StartButton({ intentsLive, ready, busy, onClick, children }: { intentsL
   }
   if (!isConnected) return <Button onClick={() => void connect()}>Connect NEAR wallet</Button>
   return (
-    <Button onClick={onClick} disabled={!ready || busy}>
-      {busy ? 'Getting a deposit address…' : children}
-    </Button>
+    <>
+      <Button onClick={onClick} disabled={!ready || busy}>
+        {busy ? 'Getting a deposit address…' : children}
+      </Button>
+      {!ready && !busy && hint && (
+        <small className="ac-start-hint" role="status">
+          {hint}
+        </small>
+      )}
+    </>
   )
 }
 
@@ -585,7 +593,20 @@ function DepositFlow({ tokens, intentsLive, current, onStarted }: { tokens: OneC
         </span>
       </label>
       <div className="earn-actions">
-        <StartButton intentsLive={intentsLive} ready={!!atomic && refundOk && !!preview.quote} busy={busy} onClick={() => void start()}>
+        <StartButton
+          intentsLive={intentsLive}
+          ready={!!atomic && refundOk && !!preview.quote}
+          busy={busy}
+          onClick={() => void start()}
+          hint={startBlocker({
+            amountOk: !!atomic,
+            addressOk: refundOk,
+            quoteReady: !!preview.quote,
+            quoteLoading: preview.loading,
+            amountHint: 'Enter an amount.',
+            addressHint: token ? `Enter your ${chainLabel(token.blockchain)} address for refunds.` : 'Pick what you pay with.',
+          })}
+        >
           Get deposit address
         </StartButton>
       </div>
@@ -805,7 +826,20 @@ function BuyYtFlow({ tokens, intentsLive, current, onStarted }: { tokens: OneCli
         <AddressInput id="buy-refund" value={refund} onChange={setRefund} chain={token?.blockchain ?? ''} placeholder="Used if the swap can't be filled" disabled={busy} />
       </Field>
       <div className="earn-actions">
-        <StartButton intentsLive={intentsLive} ready={!!need && !tooMuch && refundOk && !!preview.quote} busy={busy} onClick={() => void start()}>
+        <StartButton
+          intentsLive={intentsLive}
+          ready={!!need && !tooMuch && refundOk && !!preview.quote}
+          busy={busy}
+          onClick={() => void start()}
+          hint={startBlocker({
+            amountOk: !!need && !tooMuch,
+            addressOk: refundOk,
+            quoteReady: !!preview.quote,
+            quoteLoading: preview.loading,
+            amountHint: tooMuch ? 'That is more YT than the listing has left.' : 'Enter how much YT to buy.',
+            addressHint: token ? `Enter your ${chainLabel(token.blockchain)} address for refunds.` : 'Pick what you pay with.',
+          })}
+        >
           Get deposit address
         </StartButton>
       </div>
@@ -1007,7 +1041,20 @@ function CashOutFlow({ tokens, intentsLive, current, onStarted }: { tokens: OneC
       <TxFeedback tx={cashTx} failedTitle="Transfer failed" successTitle={`${unit} sent to NEAR Intents`} />
       {cashTx.phase === 'idle' && (
         <div className="earn-actions">
-          <StartButton intentsLive={intentsLive} ready={!!atomic && !over && recipientOk && !!preview.quote} busy={busy} onClick={() => void start()}>
+          <StartButton
+            intentsLive={intentsLive}
+            ready={!!atomic && !over && recipientOk && !!preview.quote}
+            busy={busy}
+            onClick={() => void start()}
+            hint={startBlocker({
+              amountOk: !!atomic && !over,
+              addressOk: recipientOk,
+              quoteReady: !!preview.quote,
+              quoteLoading: preview.loading,
+              amountHint: over ? 'That is more than your balance.' : 'Enter an amount.',
+              addressHint: token ? `Enter the ${chainLabel(token.blockchain)} address that should receive the ${token.symbol}.` : 'Pick what you receive.',
+            })}
+          >
             Cash out
           </StartButton>
         </div>
