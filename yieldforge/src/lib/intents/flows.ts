@@ -399,6 +399,27 @@ export interface SwapRecordBase {
   status: string
 }
 
+/**
+ * The smallest send (origin atomic units) whose worst-case stNEAR clears the series minimum, from a quote for another
+ * amount, with 2% room for the price moving. Rounded up.
+ */
+export function minSendForSeries(p: { amountInAtomic: bigint; minAmountOutYocto: bigint; minDepositYocto: bigint }): bigint {
+  const num = p.amountInAtomic * p.minDepositYocto * 102n
+  const den = p.minAmountOutYocto * 100n
+  return den === 0n ? 0n : (num + den - 1n) / den
+}
+
+/**
+ * The Standard deposit's last step: the delivered stNEAR, or what is left of it in the wallet, read fresh. Under the
+ * series minimum the series would refuse it, so there is nothing to sign.
+ */
+export function standardDepositPlan(p: { walletYocto: bigint; deliveredYocto: bigint; minDepositYocto: bigint }): { kind: 'deposit' | 'below-minimum'; amountYocto: bigint } {
+  const amountYocto = p.walletYocto < p.deliveredYocto ? p.walletYocto : p.deliveredYocto
+  if (p.deliveredYocto < p.minDepositYocto) return { kind: 'below-minimum', amountYocto: p.deliveredYocto }
+  if (amountYocto < p.minDepositYocto) return { kind: 'below-minimum', amountYocto }
+  return { kind: 'deposit', amountYocto }
+}
+
 type FollowableSwap = SwapRecordBase & { flow: string; mode?: string; deadline?: string; finishedTx?: string }
 
 /** A swap the open tab should keep showing: still moving, or delivered but waiting for the user's NEAR step. */

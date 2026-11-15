@@ -12,6 +12,8 @@ import {
   buildUnwrapAndBuyPlan,
   expressCheck,
   followedSwap,
+  minSendForSeries,
+  standardDepositPlan,
   fromAtomic,
   looksLikeAddress,
   nearPerStNear,
@@ -326,5 +328,29 @@ describe('which swap the any-chain tab follows', () => {
   it('lets a quote nobody funded go an hour after its deadline', () => {
     const stale = { ...pending, deadline: new Date(NOW - 3_700_000).toISOString() };
     assert.equal(followedSwap([stale], { focus: null, tab: 'deposit', connected: true, now: NOW }), undefined);
+  });
+});
+
+describe('deposits below the series minimum', () => {
+  const ST = 10n ** 24n;
+
+  it('suggests the smallest send whose worst case clears the minimum, with 2% room', () => {
+    // 4 USDC (6 decimals) quoted at worst 0.857 stNEAR; the series takes 1 stNEAR.
+    const min = minSendForSeries({ amountInAtomic: 4_000_000n, minAmountOutYocto: 857n * ST / 1000n, minDepositYocto: ST });
+    // 4 / 0.857 * 1.02 = 4.7608..., rounded up to the atomic unit.
+    assert.equal(min, 4_760_794n);
+  });
+
+  it('deposits what arrived when the wallet holds it and it clears the minimum', () => {
+    assert.deepEqual(standardDepositPlan({ walletYocto: 3n * ST, deliveredYocto: 2n * ST, minDepositYocto: ST }), { kind: 'deposit', amountYocto: 2n * ST });
+  });
+
+  it('deposits only what is left when part of the delivery already left the wallet', () => {
+    assert.deepEqual(standardDepositPlan({ walletYocto: 15n * ST / 10n, deliveredYocto: 2n * ST, minDepositYocto: ST }), { kind: 'deposit', amountYocto: 15n * ST / 10n });
+  });
+
+  it('offers no deposit when the delivery is under the minimum (the 4 USDC on Avalanche case)', () => {
+    const delivered = 866192907261144921407432n;
+    assert.deepEqual(standardDepositPlan({ walletYocto: 866404004970885230264528n, deliveredYocto: delivered, minDepositYocto: ST }), { kind: 'below-minimum', amountYocto: delivered });
   });
 });

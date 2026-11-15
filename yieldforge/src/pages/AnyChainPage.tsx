@@ -12,6 +12,7 @@ import { getNearBalance, isLiveMode, viewCall } from '@/lib/near/wallet'
 import { needsStorageDeposit, storageMinimum } from '@/lib/near/tx'
 import { ftTransferCallUsed, panicMessage } from '@/lib/near/outcome'
 import { buildDepositTx, fetchRefund } from '@/lib/contracts/series'
+import { getStNearBalance } from '@/lib/contracts/metapool'
 import { RefundClaim } from '@/components/RefundClaim'
 import { buildBuyTx, isBuyable, toUiListing } from '@/lib/contracts/marketplace'
 import {
@@ -30,7 +31,9 @@ import {
   fromAtomic,
   followedSwap,
   looksLikeAddress,
+  minSendForSeries,
   needsAttention,
+  standardDepositPlan,
   startBlocker,
   nearPerStNear,
   roundTripEstimate,
@@ -355,6 +358,14 @@ function eta(q: Quote | null): string | null {
 
 const trim4 = (s: string) => s.replace(/(\.\d{4})\d+$/, '$1')
 
+/** An origin-asset amount rounded up to 3 significant digits, for "send about X or more". */
+function roundUp3(atomic: bigint, decimals: number): string {
+  const n = Number(fromAtomic(atomic, decimals))
+  if (!(n > 0)) return '0'
+  const step = 10 ** (Math.floor(Math.log10(n)) - 2)
+  return String(Number((Math.ceil(n / step) * step).toPrecision(3)))
+}
+
 /** The folded details' summary: the parts that are known, joined, starting with a capital. */
 function summaryLine(...parts: Array<string | null>): string {
   const line = parts.filter(Boolean).join(' · ')
@@ -449,6 +460,11 @@ function DepositFlow({ tokens, intentsLive, current, onStarted }: { tokens: OneC
   }, [series, raw, preview.quote])
   const effective = mode === 'express' && check?.ok ? 'express' : 'standard'
   const refundOk = token ? looksLikeAddress(token.blockchain, refund) : false
+  // Under the series minimum even Standard can't finish: the series would refuse the stNEAR, so no address is issued.
+  const worstOut = preview.quote ? BigInt(preview.quote.minAmountOut) : null
+  const minDeposit = series?.minDepositYocto ?? null
+  const belowMin = worstOut != null && minDeposit != null && worstOut < minDeposit
+  const minSend = belowMin && atomic && worstOut ? minSendForSeries({ amountInAtomic: atomic, minAmountOutYocto: worstOut, minDepositYocto: minDeposit }) : null
   // What coming in and going back out costs, next to what the series term earns at today's APR. The stNEAR side is
   // valued at Meta Pool's rate; 1Click's own dollar figure is the fallback until that rate is read.
   const staking = useStakingApr()
@@ -465,6 +481,7 @@ function DepositFlow({ tokens, intentsLive, current, onStarted }: { tokens: OneC
   const start = async () => {
     if (!token || !atomic || !accountId) return
     if (!series?.depositsOpen) return push('This series no longer takes deposits. Pick an open series on Deposit & sell.')
+    if (belowMin) return push('This amount gives less stNEAR than the series minimum. Send more.')
     if (!refundOk) return push(`Enter your ${chainLabel(token.blockchain)} address for refunds.`)
     if (!ack) return push('Tick the box to confirm you understand the risks.')
     setBusy(true)
@@ -589,15 +606,18 @@ function DepositFlow({ tokens, intentsLive, current, onStarted }: { tokens: OneC
       <div className="earn-actions">
         <StartButton
           intentsLive={intentsLive}
-          ready={!!atomic && refundOk && !!preview.quote}
+          ready={!!atomic && !belowMin && refundOk && !!preview.quote}
           busy={busy}
           onClick={() => void start()}
           hint={startBlocker({
-            amountOk: !!atomic,
+            amountOk: !!atomic && !belowMin,
             addressOk: refundOk,
             quoteReady: !!preview.quote,
             quoteLoading: preview.loading,
-            amountHint: 'Enter an amount.',
+            amountHint:
+              belowMin && worstOut != null && minDeposit != null && token
+                ? `This gives at most ${formatYocto(worstOut, 4)} stNEAR; the series takes at least ${formatYocto(minDeposit, 2)} stNEAR per deposit.${minSend ? ` Send about ${roundUp3(minSend, token.decimals)} ${token.symbol} or more.` : ''}`
+                : 'Enter an amount.',
             addressHint: token ? `Enter your ${chainLabel(token.blockchain)} address for refunds.` : 'Pick what you pay with.',
           })}
         >
@@ -611,11 +631,20 @@ function DepositFlow({ tokens, intentsLive, current, onStarted }: { tokens: OneC
 function DepositTracker({ rec, active, select }: { rec: SwapRecord; active: string; select: (id: string) => void }) {
   const { accountId } = useWallet()
   const depositTx = useTx()
+  const { push } = useToast()
+  const { display: series } = useSeriesDisplay()
   const stNear = useStNearBalance(accountId)
   const delivered = rec.amountOut ? BigInt(rec.amountOut) : null
   const wallet = stNear.data != null ? BigInt(stNear.data) : null
-  const amount = delivered != null && wallet != null ? (wallet < delivered ? wallet : delivered) : null
+  const minDeposit = series?.minDepositYocto ?? 0n
+  const plan = delivered != null && wallet != null ? standardDepositPlan({ walletYocto: wallet, deliveredYocto: delivered, minDepositYocto: minDeposit }) : null
+  const amount = plan?.kind === 'deposit' ? plan.amountYocto : null
   const success = rec.status === 'SUCCESS'
+  // The balance read when the page opened predates the delivery: read it again once the swap lands.
+  const { refresh: refreshStNear } = stNear
+  useEffect(() => {
+    if (success) refreshStNear()
+  }, [success, refreshStNear])
   const wrongSeries = rec.seriesContract && rec.seriesContract !== active
   // Express: a delivery the series refused (closed, paused, full, under the minimum) is held as a refund.
   const held = useNearQuery(
@@ -629,8 +658,18 @@ function DepositTracker({ rec, active, select }: { rec: SwapRecord; active: stri
     return `The series refused the deposit${reason ? ` (“${reason}”)` : ''}, so the stNEAR stayed in your wallet.`
   }
   const deposit = async () => {
-    if (!amount) return
-    const hash = await depositTx.execute(buildDepositTx({ amountYocto: amount.toString() }), refused)
+    if (!accountId || delivered == null || !series) return
+    // Sign for what the wallet holds right now, never for a balance read before the stNEAR arrived.
+    let fresh: bigint
+    try {
+      fresh = BigInt(await getStNearBalance(accountId))
+    } catch {
+      return push('Could not read your stNEAR balance. Try again.', 'warning')
+    }
+    const now = standardDepositPlan({ walletYocto: fresh, deliveredYocto: delivered, minDepositYocto: minDeposit })
+    refreshStNear()
+    if (now.kind !== 'deposit') return
+    const hash = await depositTx.execute(buildDepositTx({ amountYocto: now.amountYocto.toString() }), refused)
     if (hash) saveSwap({ depositAddress: rec.depositAddress, finishedTx: hash })
   }
 
@@ -660,8 +699,17 @@ function DepositTracker({ rec, active, select }: { rec: SwapRecord; active: stri
         ) : (
           <>
             <TxFeedback tx={depositTx} failedTitle="Deposit failed" successTitle="PT and YT received" />
-            {depositTx.phase === 'idle' && (
-              <Button onClick={() => void deposit()} disabled={!amount}>
+            {plan?.kind === 'below-minimum' && delivered != null && (
+              <p className="earn-note">
+                {delivered < minDeposit
+                  ? `${formatYocto(delivered, 4)} stNEAR arrived in ${rec.accountId}, under this series' minimum of ${formatYocto(minDeposit, 2)} stNEAR per deposit, so it can't go in on its own.`
+                  : `Only ${formatYocto(plan.amountYocto, 4)} stNEAR of it is still in your wallet, under this series' minimum of ${formatYocto(minDeposit, 2)} stNEAR per deposit.`}{' '}
+                It stays in your wallet and keeps earning staking yield. Add more on <Link to="/earn">Deposit &amp; sell</Link> and deposit the total there, or{' '}
+                <Link to="/any-chain?tab=cash-out">cash it out</Link>.
+              </p>
+            )}
+            {depositTx.phase === 'idle' && plan?.kind !== 'below-minimum' && (
+              <Button onClick={() => void deposit()} disabled={!amount || !series}>
                 Deposit {amount != null ? formatYoctoInput(amount, 4) : '…'} stNEAR into the series
               </Button>
             )}
