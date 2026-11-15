@@ -934,6 +934,19 @@ a { color: inherit; }
 .ac-picker select:only-child { max-width: 260px; }
 .ac-picker select + select { border-left: 1px solid var(--line); }
 .ac-picker select:disabled { cursor: default; color: var(--ink-muted); }
+/* The chain picker: a select-only combobox so each chain shows its logo. */
+.ac-chain-select { position: relative; display: flex; flex: 0 1 auto; min-width: 0; }
+.ac-chain-select + select { border-left: 1px solid var(--line); }
+.ac-chain-select > button { display: flex; align-items: center; gap: 7px; min-width: 0; max-width: 220px; padding: 8px 8px; border: 0; background: transparent; color: var(--ink); font: 13px var(--mono); cursor: pointer; }
+.ac-chain-select > button:disabled { cursor: default; color: var(--ink-muted); }
+.ac-chain-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ac-chain-caret { flex: 0 0 auto; color: var(--ink-soft); }
+.ac-chain-icon { flex: 0 0 18px; width: 18px; height: 18px; }
+.ac-chain-badge { display: inline-grid; place-items: center; border-radius: 50%; background: var(--paper-3); color: var(--ink-soft); font: 700 8.5px/1 var(--mono); letter-spacing: 0; }
+.ac-chain-list { position: absolute; top: calc(100% + 1px); left: -1px; z-index: 30; min-width: 230px; max-height: 320px; margin: 0; padding: 4px 0; overflow-y: auto; list-style: none; border: 1px solid var(--line); background: var(--white); box-shadow: var(--shadow); }
+.ac-chain-list li { display: flex; align-items: center; gap: 9px; padding: 7px 12px; color: var(--ink); font: 13px var(--mono); cursor: pointer; }
+.ac-chain-list li.is-active { background: var(--paper-2); }
+.ac-chain-list li[aria-selected='true'] { font-weight: 700; }
 
 /* Folded quote details. */
 .ac-details { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
@@ -1004,6 +1017,8 @@ a { color: inherit; }
   .ac-box-main { flex-wrap: wrap; }
   .ac-box .ac-picker { flex: 1 1 100%; }
   .ac-box .ac-picker select { flex: 1 1 auto; max-width: none; }
+  .ac-box .ac-chain-select { flex: 1 1 auto; }
+  .ac-box .ac-chain-select > button { flex: 1 1 auto; max-width: none; }
   .ac-get { font-size: 20px; }
   .ac-dl > div { grid-template-columns: 1fr; gap: 1px; }
   .ac-steps { grid-template-columns: 1fr; }

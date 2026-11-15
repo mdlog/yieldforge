@@ -348,7 +348,7 @@ errors) and transactions signed in the user's wallet. There is no backend and no
 | --- | --- |
 | Smart contract | Rust, `near-sdk` 5.27, `near-contract-standards` 5.27 (NEP-141/145/148), `uint` (U256 math), binaryen `wasm-opt` |
 | Chain | NEAR Protocol mainnet (app.yieldforge.mdloglabs.org) and testnet (demo), Meta Pool stNEAR, NEAR Intents 1Click API, NearBlocks API v3 (account activity), FastNEAR archival RPC (stNEAR APR, read-only mainnet reads) |
-| Frontend | React 19, TypeScript 5.7, Vite 6, React Router 7, lucide-react, uqr (deposit-address QR codes) |
+| Frontend | React 19, TypeScript 5.7, Vite 6, React Router 7, lucide-react, uqr (deposit-address QR codes), chain logos from web3icons (MIT, bundled SVGs in `src/assets/chains`) |
 | NEAR client | NEAR Connect 0.12 (`@hot-labs/near-connect`: HOT, Meteor, Intear, MyNearWallet, OKX, Nightly, NEAR Mobile, Ledger, …), JSON-RPC view calls over `fetch` |
 | Scripts | Node.js, near-api-js 5 |
 | Hosting | Railway (Node 20, Railpack): testnet app, mainnet app (`npm run build:mainnet`) and a keeper cron for each network |
